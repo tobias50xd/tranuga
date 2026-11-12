@@ -1,0 +1,31 @@
+# Dependencies and generated static assets
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Cloudflare local state and credentials
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# APK inputs and reverse engineering output (not webapp assets)
+apks/
+out/
+*.apk
+*.apks
+*.hbc
+*.hasm
+
+# Editors, OS files, logs
+.DS_Store
+.idea/
+.vscode/
+*.log
+*.tsbuildinfo

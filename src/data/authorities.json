@@ -1,0 +1,732 @@
+[
+  {
+    "id": "1",
+    "name": "CATA",
+    "kind": "infopoint",
+    "restUrl": "https://realtime.catabus.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.7620928,
+      "lon": -77.8753755
+    }
+  },
+  {
+    "id": "2",
+    "name": "LANTA",
+    "kind": "infopoint",
+    "restUrl": "https://realtimelanta.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.608227,
+      "lon": -75.490091
+    }
+  },
+  {
+    "id": "3",
+    "name": "GrandRapids",
+    "kind": "infopoint",
+    "restUrl": "https://connect.ridetherapid.org/infopoint/rest",
+    "center": {
+      "lat": 42.96342,
+      "lon": -85.66809
+    }
+  },
+  {
+    "id": "5",
+    "name": "Amtran",
+    "kind": "infopoint",
+    "restUrl": "https://amtran.rideralerts.com/infopoint/rest",
+    "center": {
+      "lat": 40.518651,
+      "lon": -78.394745
+    }
+  },
+  {
+    "id": "7",
+    "name": "RVTA",
+    "kind": "infopoint",
+    "restUrl": "https://my.ridervt.com/infopoint/rest",
+    "center": {
+      "lat": 41.24046,
+      "lon": -77.0032129
+    }
+  },
+  {
+    "id": "9",
+    "name": "Votran",
+    "kind": "infopoint",
+    "restUrl": "https://realtimevotran.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 29.168639,
+      "lon": -81.020981
+    }
+  },
+  {
+    "id": "12",
+    "name": "LexTran",
+    "kind": "infopoint",
+    "restUrl": "https://mystop.lextran.com/InfoPoint/rest",
+    "center": {
+      "lat": 38.058199,
+      "lon": -84.482138
+    }
+  },
+  {
+    "id": "13",
+    "name": "York",
+    "kind": "infopoint",
+    "restUrl": "https://realtime.rabbittransit.org/InfoPoint/rest",
+    "center": {
+      "lat": 39.981,
+      "lon": -76.67
+    }
+  },
+  {
+    "id": "14",
+    "name": "Gwinnett",
+    "kind": "infopoint",
+    "restUrl": "https://realtimegwinnett.availtec.com/infopoint/rest",
+    "center": {
+      "lat": 33.924,
+      "lon": -84.185
+    }
+  },
+  {
+    "id": "15",
+    "name": "AVTA",
+    "kind": "infopoint",
+    "restUrl": "https://track-it.avta.com/InfoPoint/rest",
+    "center": {
+      "lat": 34.649587,
+      "lon": -118.140578
+    }
+  },
+  {
+    "id": "16",
+    "name": "PVTA",
+    "kind": "infopoint",
+    "restUrl": "https://bustracker.pvta.com/InfoPoint/rest",
+    "center": {
+      "lat": 42.392387,
+      "lon": -72.527738
+    }
+  },
+  {
+    "id": "18",
+    "name": "Montebello",
+    "kind": "infopoint",
+    "restUrl": "https://mbl.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 34.006442,
+      "lon": -118.115785
+    }
+  },
+  {
+    "id": "19",
+    "name": "Kalamazoo",
+    "kind": "infopoint",
+    "restUrl": "https://trackmybus.kmetro.org/InfoPoint/rest",
+    "center": {
+      "lat": 42.29292,
+      "lon": -85.589482
+    }
+  },
+  {
+    "id": "21",
+    "name": "SARTA",
+    "kind": "infopoint",
+    "restUrl": "https://sarta.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.800787,
+      "lon": -81.378534
+    }
+  },
+  {
+    "id": "22",
+    "name": "PalmTran",
+    "kind": "infopoint",
+    "restUrl": "https://palmtran.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 26.74297,
+      "lon": -80.06713
+    }
+  },
+  {
+    "id": "23",
+    "name": "Citrus",
+    "kind": "infopoint",
+    "restUrl": "https://citrus.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 28.062435,
+      "lon": -81.947359
+    }
+  },
+  {
+    "id": "25",
+    "name": "COLTS",
+    "kind": "infopoint",
+    "restUrl": "https://coltsivl.availtec.com/infopoint/rest",
+    "center": {
+      "lat": 41.407748,
+      "lon": -75.656784
+    }
+  },
+  {
+    "id": "26",
+    "name": "Hazleton",
+    "kind": "infopoint",
+    "restUrl": "https://realtimehpts.availtec.com/infopoint/rest",
+    "center": {
+      "lat": 40.959152,
+      "lon": -75.970975
+    }
+  },
+  {
+    "id": "27",
+    "name": "ACT",
+    "kind": "infopoint",
+    "restUrl": "https://atomiccitybustracker.availtec.com/infopoint/rest",
+    "center": {
+      "lat": 35.877821,
+      "lon": -106.253646
+    }
+  },
+  {
+    "id": "28",
+    "name": "NCRTD",
+    "kind": "infopoint",
+    "restUrl": "https://bluebustracker.availtec.com/infopoint/rest",
+    "center": {
+      "lat": 36.007576,
+      "lon": -106.064885
+    }
+  },
+  {
+    "id": "29",
+    "name": "Akron",
+    "kind": "infopoint",
+    "restUrl": "https://realtimemetro.availtec.com/Infopoint/rest",
+    "center": {
+      "lat": 41.049008,
+      "lon": -81.540672
+    }
+  },
+  {
+    "id": "30",
+    "name": "Lebanon",
+    "kind": "infopoint",
+    "restUrl": "https://realtime.lebanontransit.org/InfoPoint/rest",
+    "center": {
+      "lat": 40.341281,
+      "lon": -76.4168597
+    }
+  },
+  {
+    "id": "31",
+    "name": "BARTA",
+    "kind": "infopoint",
+    "restUrl": "https://busfinder.bartabus.com/Infopoint/rest",
+    "center": {
+      "lat": 40.334238,
+      "lon": -75.922809
+    }
+  },
+  {
+    "id": "32",
+    "name": "RRTA",
+    "kind": "infopoint",
+    "restUrl": "https://busfinder.redrosetransit.com/Infopoint/rest",
+    "center": {
+      "lat": 40.041511,
+      "lon": -76.3048
+    }
+  },
+  {
+    "id": "33",
+    "name": "NTD",
+    "kind": "infopoint",
+    "restUrl": "https://mystop.norwalktransit.com/infopoint/rest",
+    "center": {
+      "lat": 41.118259,
+      "lon": -73.414993
+    }
+  },
+  {
+    "id": "35",
+    "name": "Erie",
+    "kind": "infopoint",
+    "restUrl": "https://emta.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 42.122374,
+      "lon": -80.077422
+    }
+  },
+  {
+    "id": "37",
+    "name": "Butler",
+    "kind": "infopoint",
+    "restUrl": "https://butlerivl.availtec.com/infoPoint/rest",
+    "center": {
+      "lat": 40.86354,
+      "lon": -79.8952364
+    }
+  },
+  {
+    "id": "41",
+    "name": "Wichita",
+    "kind": "infopoint",
+    "restUrl": "https://bus.wichitatransit.org/InfoPoint/rest",
+    "center": {
+      "lat": 37.680107,
+      "lon": -97.328601
+    }
+  },
+  {
+    "id": "42",
+    "name": "Mobile",
+    "kind": "infopoint",
+    "restUrl": "https://realtimemobile.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 30.691446,
+      "lon": -88.141417
+    }
+  },
+  {
+    "id": "43",
+    "name": "Acadia",
+    "kind": "infopoint",
+    "restUrl": "https://islandexplorertracker.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 44.387918,
+      "lon": -68.205549
+    }
+  },
+  {
+    "id": "44",
+    "name": "Ithaca",
+    "kind": "infopoint",
+    "restUrl": "https://realtimetcatbus.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 42.453248,
+      "lon": -76.505747
+    }
+  },
+  {
+    "id": "45",
+    "name": "STS",
+    "kind": "infopoint",
+    "restUrl": "https://sts.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.681606,
+      "lon": -76.191897
+    }
+  },
+  {
+    "id": "48",
+    "name": "Monroe",
+    "kind": "infopoint",
+    "restUrl": "https://ponytracker.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.0507323,
+      "lon": -75.2468432
+    }
+  },
+  {
+    "id": "49",
+    "name": "SunTran",
+    "kind": "infopoint",
+    "restUrl": "https://realtimesuntran.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 29.206724,
+      "lon": -82.09032
+    }
+  },
+  {
+    "id": "50",
+    "name": "Harrisonburg Transit",
+    "kind": "infopoint",
+    "restUrl": "https://harrisonburgtransit.rideralerts.com/myStop/rest",
+    "center": {
+      "lat": 38.453508,
+      "lon": -78.852067
+    }
+  },
+  {
+    "id": "51",
+    "name": "CamTran",
+    "kind": "infopoint",
+    "restUrl": "https://live.camtranbus.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.3269509,
+      "lon": -78.9537164
+    }
+  },
+  {
+    "id": "52",
+    "name": "WRTA",
+    "kind": "infopoint",
+    "restUrl": "https://myvalleystops.wrtaonline.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.097683,
+      "lon": -80.651408
+    }
+  },
+  {
+    "id": "54",
+    "name": "StanRTA",
+    "kind": "infopoint",
+    "restUrl": "https://stanrta.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 37.639462,
+      "lon": -121.001482
+    }
+  },
+  {
+    "id": "55",
+    "name": "Mercer",
+    "kind": "infopoint",
+    "restUrl": "https://svss.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.239902,
+      "lon": -80.463627
+    }
+  },
+  {
+    "id": "58",
+    "name": "Athens",
+    "kind": "infopoint",
+    "restUrl": "https://bustracker.accgov.com/InfoPoint/rest",
+    "center": {
+      "lat": 33.959905,
+      "lon": -83.370832
+    }
+  },
+  {
+    "id": "60",
+    "name": "Manatee",
+    "kind": "infopoint",
+    "restUrl": "https://realtimemcat.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 27.4952702,
+      "lon": -82.5744441
+    }
+  },
+  {
+    "id": "62",
+    "name": "IndyGo",
+    "kind": "infopoint",
+    "restUrl": "http://realtime.indygo.net/InfoPoint/rest",
+    "center": {
+      "lat": 39.7665566,
+      "lon": -86.1535123
+    }
+  },
+  {
+    "id": "63",
+    "name": "Luzerne",
+    "kind": "infopoint",
+    "restUrl": "https://realtimelctabus.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.2666405,
+      "lon": -75.9071527
+    }
+  },
+  {
+    "id": "64",
+    "name": "IndiGO",
+    "kind": "infopoint",
+    "restUrl": "https://indigobus.availtec.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.6257678,
+      "lon": -79.1765519
+    }
+  },
+  {
+    "id": "65",
+    "name": "NorwalkCA",
+    "kind": "infopoint",
+    "restUrl": "https://nts.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 33.916011,
+      "lon": -118.0625794
+    }
+  },
+  {
+    "id": "66",
+    "name": "Link",
+    "kind": "infopoint",
+    "restUrl": "https://link.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 47.4216995,
+      "lon": -120.306118
+    }
+  },
+  {
+    "id": "68",
+    "name": "Foothill Transit",
+    "kind": "infopoint",
+    "restUrl": "https://foothill.rideralerts.com/myStop/rest",
+    "center": {
+      "lat": 34.0698017,
+      "lon": -117.926479
+    }
+  },
+  {
+    "id": "69",
+    "name": "Peoria",
+    "kind": "infopoint",
+    "restUrl": "https://clk.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.6892402,
+      "lon": -89.5952503
+    }
+  },
+  {
+    "id": "71",
+    "name": "ATA",
+    "kind": "infopoint",
+    "restUrl": "https://rideata.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.478792,
+      "lon": -78.669493
+    }
+  },
+  {
+    "id": "72",
+    "name": "MidMon",
+    "kind": "infopoint",
+    "restUrl": "https://mmvta.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.146083,
+      "lon": -79.9059
+    }
+  },
+  {
+    "id": "73",
+    "name": "Meadville",
+    "kind": "infopoint",
+    "restUrl": "https://catabus.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.635871,
+      "lon": -80.155806
+    }
+  },
+  {
+    "id": "74",
+    "name": "BCTA",
+    "kind": "infopoint",
+    "restUrl": "https://bcta.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.7009885,
+      "lon": -80.2846218
+    }
+  },
+  {
+    "id": "75",
+    "name": "Harrisburg",
+    "kind": "infopoint",
+    "restUrl": "https://cat.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.2713029,
+      "lon": -76.8780381
+    }
+  },
+  {
+    "id": "76",
+    "name": "Anchorage",
+    "kind": "infopoint",
+    "restUrl": "https://bustracker.muni.org/InfoPoint/rest",
+    "center": {
+      "lat": 61.1770838,
+      "lon": -149.8142493
+    }
+  },
+  {
+    "id": "77",
+    "name": "ITS",
+    "kind": "infopoint",
+    "restUrl": "https://its.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 47.0462866,
+      "lon": -122.9001098
+    }
+  },
+  {
+    "id": "78",
+    "name": "Durham",
+    "kind": "infopoint",
+    "restUrl": "https://godurham.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 35.995957,
+      "lon": -78.90596
+    }
+  },
+  {
+    "id": "79",
+    "name": "Tulsa",
+    "kind": "infopoint",
+    "restUrl": "https://tulsa.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 36.1543185,
+      "lon": -95.9748099
+    }
+  },
+  {
+    "id": "81",
+    "name": "CATS",
+    "kind": "infopoint",
+    "restUrl": "https://cats.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 30.4495886,
+      "lon": -91.1651691
+    }
+  },
+  {
+    "id": "82",
+    "name": "PART",
+    "kind": "infopoint",
+    "restUrl": "https://part.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.244851,
+      "lon": -75.651315
+    }
+  },
+  {
+    "id": "83",
+    "name": "NCATA",
+    "kind": "infopoint",
+    "restUrl": "https://ncata.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.00214,
+      "lon": -80.34702
+    }
+  },
+  {
+    "id": "84",
+    "name": "WCTA",
+    "kind": "infopoint",
+    "restUrl": "https://wcta.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.302661,
+      "lon": -79.547136
+    }
+  },
+  {
+    "id": "86",
+    "name": "FACT",
+    "kind": "infopoint",
+    "restUrl": "https://fact.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 39.9607058,
+      "lon": -79.6523093
+    }
+  },
+  {
+    "id": "87",
+    "name": "TACT",
+    "kind": "infopoint",
+    "restUrl": "https://tact.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.8173471,
+      "lon": -79.5185823
+    }
+  },
+  {
+    "id": "88",
+    "name": "TAWC",
+    "kind": "infopoint",
+    "restUrl": "https://tawc.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.8420327,
+      "lon": -79.1462367
+    }
+  },
+  {
+    "id": "89",
+    "name": "Freedom",
+    "kind": "infopoint",
+    "restUrl": "https://freedom.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.1724008,
+      "lon": -80.2451909
+    }
+  },
+  {
+    "id": "90",
+    "name": "LATS",
+    "kind": "infopoint",
+    "restUrl": "https://lats.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 40.7969851,
+      "lon": -76.4144477
+    }
+  },
+  {
+    "id": "91",
+    "name": "BeST",
+    "kind": "infopoint",
+    "restUrl": "https://best.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 41.9281005,
+      "lon": -76.5245365
+    }
+  },
+  {
+    "id": "92",
+    "name": "TARC",
+    "kind": "infopoint",
+    "restUrl": "https://tarc.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 38.2468543,
+      "lon": -85.7686846
+    }
+  },
+  {
+    "id": "93",
+    "name": "Salem",
+    "kind": "infopoint",
+    "restUrl": "https://cherriots.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 44.9410414,
+      "lon": -123.0357196
+    }
+  },
+  {
+    "id": "94",
+    "name": "Downey",
+    "kind": "infopoint",
+    "restUrl": "https://downey.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 33.8168607,
+      "lon": -118.1690336
+    }
+  },
+  {
+    "id": "95",
+    "name": "Cobb",
+    "kind": "infopoint",
+    "restUrl": "https://cobb.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 33.8627942,
+      "lon": -84.5085755
+    }
+  },
+  {
+    "id": "96",
+    "name": "Pasco",
+    "kind": "infopoint",
+    "restUrl": "https://gopasco.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 28.283124,
+      "lon": -82.6844976
+    }
+  },
+  {
+    "id": "97",
+    "name": "SporTran",
+    "kind": "infopoint",
+    "restUrl": "https://sportran.rideralerts.com/InfoPoint/rest",
+    "center": {
+      "lat": 32.4995905,
+      "lon": -93.7567546
+    }
+  }
+]

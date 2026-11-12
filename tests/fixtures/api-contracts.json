@@ -1,0 +1,1515 @@
+{
+  "ugaRoutes": [
+    {
+      "id": 5741,
+      "color": {
+        "r": 200,
+        "g": 57,
+        "b": 116
+      },
+      "short_name": "M|MN",
+      "long_name": "M | Milledge Night",
+      "isAthensBus": false,
+      "new_id": "5741",
+      "old_id": "2615",
+      "active": false
+    },
+    {
+      "id": 5750,
+      "color": {
+        "r": 7,
+        "g": 92,
+        "b": 255
+      },
+      "short_name": "A|CE",
+      "long_name": "A | Central East",
+      "isAthensBus": false,
+      "new_id": "5750",
+      "old_id": "4921",
+      "active": true
+    }
+  ],
+  "ugaTracking": [
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155093",
+        "name": "Intramural Fields Deck",
+        "latitude": 33.932505,
+        "longitude": -83.371494
+      },
+      "times": [
+        1794522642003,
+        1794522672003,
+        1794522796003,
+        1794522826003
+      ],
+      "id": "r_5750__s_155093",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155093",
+      "stopName": "Intramural Fields Deck",
+      "stopSequence": 1
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155135",
+        "name": "Lot E01",
+        "latitude": 33.933268,
+        "longitude": -83.37086
+      },
+      "times": [
+        1794522738003,
+        1794522891003,
+        1794523041003,
+        1794523060003
+      ],
+      "id": "r_5750__s_155135",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155135",
+      "stopName": "Lot E01",
+      "stopSequence": 2
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155094",
+        "name": "East Campus Village",
+        "latitude": 33.938039,
+        "longitude": -83.368513
+      },
+      "times": [
+        1794522860003,
+        1794523013003,
+        1794523163003,
+        1794523182003
+      ],
+      "id": "r_5750__s_155094",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155094",
+      "stopName": "East Campus Village",
+      "stopSequence": 3
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155113",
+        "name": "Tucker Hall Northbound",
+        "latitude": 33.942312,
+        "longitude": -83.37088
+      },
+      "times": [
+        1794522974003,
+        1794523127003,
+        1794523277003,
+        1794523296003
+      ],
+      "id": "r_5750__s_155113",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155113",
+      "stopName": "Tucker Hall Northbound",
+      "stopSequence": 4
+    },
+    {
+      "busLocations": [
+        0
+      ],
+      "stop": {
+        "id": "155111",
+        "name": "I-STEM/Food Science Westbound",
+        "latitude": 33.945571,
+        "longitude": -83.37191
+      },
+      "times": [
+        1794523094003,
+        1794523247003,
+        1794523398003,
+        1794523416003
+      ],
+      "id": "r_5750__s_155111",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155111",
+      "stopName": "I-STEM/Food Science Westbound",
+      "stopSequence": 5
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155108",
+        "name": "Cedar St. Science Complex Westbound",
+        "latitude": 33.947935,
+        "longitude": -83.374295
+      },
+      "times": [
+        1794522595003,
+        1794523206003,
+        1794523360003,
+        1794523510003
+      ],
+      "id": "r_5750__s_155108",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155108",
+      "stopName": "Cedar St. Science Complex Westbound",
+      "stopSequence": 6
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155104",
+        "name": "Physics Northbound",
+        "latitude": 33.948332,
+        "longitude": -83.376913
+      },
+      "times": [
+        1794522625003,
+        1794523295003,
+        1794523449003,
+        1794523599003
+      ],
+      "id": "r_5750__s_155104",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155104",
+      "stopName": "Physics Northbound",
+      "stopSequence": 7
+    },
+    {
+      "busLocations": [
+        0
+      ],
+      "stop": {
+        "id": "155100",
+        "name": "Tate Center - Memorial Hall",
+        "latitude": 33.951439,
+        "longitude": -83.374245
+      },
+      "times": [
+        1794522655003,
+        1794523393003,
+        1794523547003,
+        1794523697003
+      ],
+      "id": "r_5750__s_155100",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155100",
+      "stopName": "Tate Center - Memorial Hall",
+      "stopSequence": 8
+    },
+    {
+      "busLocations": [
+        0
+      ],
+      "stop": {
+        "id": "155097",
+        "name": "Lumpkin St. at Wray St. Northbound",
+        "latitude": 33.95458,
+        "longitude": -83.376482
+      },
+      "times": [
+        1794522635003,
+        1794522685003,
+        1794523489003,
+        1794523642003
+      ],
+      "id": "r_5750__s_155097",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155097",
+      "stopName": "Lumpkin St. at Wray St. Northbound",
+      "stopSequence": 9
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155086",
+        "name": "The Arch/Downtown",
+        "latitude": 33.957615,
+        "longitude": -83.375544
+      },
+      "times": [
+        1794522646003,
+        1794522665003,
+        1794522715003,
+        1794523602003
+      ],
+      "id": "r_5750__s_155086",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155086",
+      "stopName": "The Arch/Downtown",
+      "stopSequence": 10
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155085",
+        "name": "Main Library",
+        "latitude": 33.955035,
+        "longitude": -83.373165
+      },
+      "times": [
+        1794522676003,
+        1794522695003,
+        1794522745003,
+        1794523719003
+      ],
+      "id": "r_5750__s_155085",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155085",
+      "stopName": "Main Library",
+      "stopSequence": 11
+    },
+    {
+      "busLocations": [
+        0
+      ],
+      "stop": {
+        "id": "155099",
+        "name": "Tate Center - Instructional Plaza",
+        "latitude": 33.951973,
+        "longitude": -83.373179
+      },
+      "times": [
+        1794522706003,
+        1794522725003,
+        1794522775003,
+        1794523831003
+      ],
+      "id": "r_5750__s_155099",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155099",
+      "stopName": "Tate Center - Instructional Plaza",
+      "stopSequence": 12
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155101",
+        "name": "Tate Center - MLC",
+        "latitude": 33.950928,
+        "longitude": -83.37418
+      },
+      "times": [
+        1794522586003,
+        1794522736003,
+        1794522755003,
+        1794522805003
+      ],
+      "id": "r_5750__s_155101",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155101",
+      "stopName": "Tate Center - MLC",
+      "stopSequence": 13
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155105",
+        "name": "Physics Southbound",
+        "latitude": 33.947909,
+        "longitude": -83.376764
+      },
+      "times": [
+        1794522616003,
+        1794522766003,
+        1794522785003,
+        1794522835003
+      ],
+      "id": "r_5750__s_155105",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155105",
+      "stopName": "Physics Southbound",
+      "stopSequence": 14
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155109",
+        "name": "Cedar St. Science Complex Eastbound",
+        "latitude": 33.947511,
+        "longitude": -83.373179
+      },
+      "times": [
+        1794522646003,
+        1794522796003,
+        1794522815003,
+        1794522865003
+      ],
+      "id": "r_5750__s_155109",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155109",
+      "stopName": "Cedar St. Science Complex Eastbound",
+      "stopSequence": 15
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155110",
+        "name": "I-STEM/Food Science Eastbound",
+        "latitude": 33.945448042,
+        "longitude": -83.371706494
+      },
+      "times": [
+        1794522676003,
+        1794522826003,
+        1794522845003,
+        1794522895003
+      ],
+      "id": "r_5750__s_155110",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155110",
+      "stopName": "I-STEM/Food Science Eastbound",
+      "stopSequence": 16
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155114",
+        "name": "Tucker Hall Southbound",
+        "latitude": 33.942288,
+        "longitude": -83.370965
+      },
+      "times": [
+        1794522706003,
+        1794522856003,
+        1794522875003,
+        1794522925003
+      ],
+      "id": "r_5750__s_155114",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155114",
+      "stopName": "Tucker Hall Southbound",
+      "stopSequence": 17
+    },
+    {
+      "busLocations": [],
+      "stop": {
+        "id": "155132",
+        "name": "Joe Frank Harris Commons",
+        "latitude": 33.939589,
+        "longitude": -83.370619
+      },
+      "times": [
+        1794522736003,
+        1794522886003,
+        1794522905003,
+        1794522955003
+      ],
+      "id": "r_5750__s_155132",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155132",
+      "stopName": "Joe Frank Harris Commons",
+      "stopSequence": 18
+    },
+    {
+      "busLocations": [
+        0
+      ],
+      "stop": {
+        "id": "155133",
+        "name": "University Health Center",
+        "latitude": 33.93676,
+        "longitude": -83.372016
+      },
+      "times": [
+        1794522766003,
+        1794522916003,
+        1794522935003,
+        1794522985003
+      ],
+      "id": "r_5750__s_155133",
+      "routeId": 5750,
+      "direction": 0,
+      "directionName": "",
+      "stopId": "155133",
+      "stopName": "University Health Center",
+      "stopSequence": 19
+    }
+  ],
+  "ugaVehicles": [
+    {
+      "id": "17997",
+      "name": "95122",
+      "direction": 3,
+      "routeId": 5750,
+      "tripId": 611290,
+      "stopId": "155093",
+      "latitude": 33.936614990234375,
+      "longitude": -83.3702621459961,
+      "speed": 4,
+      "passengerLoad": -1,
+      "heading": 98,
+      "nextStops": [
+        155093,
+        155093,
+        155135,
+        155094,
+        155113,
+        155111,
+        155108
+      ],
+      "prevStop": 155133,
+      "progress": 0,
+      "lastUpdate": 1794522557003,
+      "proxyTimestamp": 1794522557003,
+      "isAthensBus": false
+    },
+    {
+      "id": "15225",
+      "name": "95123",
+      "direction": 3,
+      "routeId": 5748,
+      "tripId": 1116953,
+      "stopId": "155094",
+      "latitude": 33.93326187133789,
+      "longitude": -83.37088775634766,
+      "speed": 3,
+      "passengerLoad": -1,
+      "heading": 331,
+      "nextStops": [
+        155094,
+        155088,
+        155116,
+        155117,
+        198803,
+        155104,
+        155100
+      ],
+      "prevStop": 155135,
+      "progress": 0,
+      "lastUpdate": 1794522557003,
+      "proxyTimestamp": 1794522557003,
+      "isAthensBus": false
+    }
+  ],
+  "ugaStop": [
+    {
+      "times": [
+        1794522625003,
+        1794523295003,
+        1794523449003,
+        1794523599003,
+        1794523618003,
+        1794523668003
+      ],
+      "id": "r_5750__s_155104",
+      "routeId": "5750",
+      "direction": 0,
+      "directionName": "Loop",
+      "stopId": "155104",
+      "stopName": "Physics Northbound",
+      "stopSequence": 7
+    },
+    {
+      "times": [
+        1794523081003,
+        1794523463003,
+        1794523985003,
+        1794525148003
+      ],
+      "id": "r_5748__s_155104",
+      "routeId": "5748",
+      "direction": 0,
+      "directionName": "Loop",
+      "stopId": "155104",
+      "stopName": "Physics Northbound",
+      "stopSequence": 8
+    },
+    {
+      "times": [
+        1794523111003,
+        1794523795003,
+        1794524997003,
+        1794525605003
+      ],
+      "id": "r_5745__s_155104",
+      "routeId": "5745",
+      "direction": 0,
+      "directionName": "Loop",
+      "stopId": "155104",
+      "stopName": "Physics Northbound",
+      "stopSequence": 11
+    },
+    {
+      "times": [
+        1794523163003,
+        1794523607003,
+        1794523986003,
+        1794524515003,
+        1794524603003,
+        1794525460003
+      ],
+      "id": "r_5749__s_155104",
+      "routeId": "5749",
+      "direction": 0,
+      "directionName": "Loop",
+      "stopId": "155104",
+      "stopName": "Physics Northbound",
+      "stopSequence": 8
+    },
+    {
+      "times": [
+        1794523205003,
+        1794523951003,
+        1794524785003
+      ],
+      "id": "r_5739__s_155104",
+      "routeId": "5739",
+      "direction": 0,
+      "directionName": "Loop",
+      "stopId": "155104",
+      "stopName": "Physics Northbound",
+      "stopSequence": 8
+    }
+  ],
+  "ugaStatic": {
+    "version": 1086,
+    "tripIdToRouteId": {
+      "611290": 5750
+    },
+    "tripStopSequence": {
+      "611290": [
+        155093,
+        155135,
+        155094,
+        155113,
+        155111,
+        155108,
+        155104,
+        155100,
+        155097,
+        155086,
+        155085,
+        155099,
+        155101,
+        155105,
+        155109,
+        155110,
+        155114,
+        155132,
+        155133,
+        155093
+      ]
+    },
+    "routestops": [],
+    "RouteIdToTripId": {},
+    "stops": [
+      {
+        "id": "155086",
+        "name": "The Arch/Downtown",
+        "latitude": 33.9575,
+        "longitude": -83.3754
+      },
+      {
+        "id": "155097",
+        "name": "Lumpkin St @ Wray St NB",
+        "latitude": 33.954589,
+        "longitude": -83.376418
+      },
+      {
+        "id": "155085",
+        "name": "Main Library",
+        "latitude": 33.9548,
+        "longitude": -83.3732
+      },
+      {
+        "id": "155099",
+        "name": "Tate Center - Instructional Plaza",
+        "latitude": 33.952,
+        "longitude": -83.3732
+      },
+      {
+        "id": "155100",
+        "name": "Tate Center - Memorial Hall",
+        "latitude": 33.9513,
+        "longitude": -83.3741
+      },
+      {
+        "id": "155101",
+        "name": "Tate Center - MLC",
+        "latitude": 33.9509,
+        "longitude": -83.3743
+      },
+      {
+        "id": "155104",
+        "name": "Physics NB",
+        "latitude": 33.9483,
+        "longitude": -83.3769
+      },
+      {
+        "id": "155105",
+        "name": "Physics SB",
+        "latitude": 33.9479,
+        "longitude": -83.3768
+      },
+      {
+        "id": "155108",
+        "name": "Cedar St Science Complex WB",
+        "latitude": 33.948,
+        "longitude": -83.3739
+      },
+      {
+        "id": "155109",
+        "name": "Cedar St Science Complex EB",
+        "latitude": 33.9475,
+        "longitude": -83.3732
+      },
+      {
+        "id": "155110",
+        "name": "I-STEM/Food Science EB",
+        "latitude": 33.945448042,
+        "longitude": -83.371706494
+      },
+      {
+        "id": "155111",
+        "name": "I-STEM/Food Science WB",
+        "latitude": 33.9456,
+        "longitude": -83.3719
+      },
+      {
+        "id": "155113",
+        "name": "Tucker Hall NB",
+        "latitude": 33.9423,
+        "longitude": -83.3708
+      },
+      {
+        "id": "155114",
+        "name": "Tucker Hall SB",
+        "latitude": 33.9423,
+        "longitude": -83.371
+      },
+      {
+        "id": "155132",
+        "name": "Joe Frank Harris Commons",
+        "latitude": 33.9396,
+        "longitude": -83.3706
+      },
+      {
+        "id": "155133",
+        "name": "University Health Center",
+        "latitude": 33.9367,
+        "longitude": -83.3721
+      },
+      {
+        "id": "155094",
+        "name": "East Campus Village",
+        "latitude": 33.938039,
+        "longitude": -83.368513
+      },
+      {
+        "id": "155093",
+        "name": "Intramural Deck",
+        "latitude": 33.9324,
+        "longitude": -83.3714
+      },
+      {
+        "id": "155135",
+        "name": "Lot E01",
+        "latitude": 33.9333,
+        "longitude": -83.3708
+      }
+    ],
+    "shapes": [
+      {
+        "routeId": "5750",
+        "shape": "gmbnEvnz{NP_A@M@MCOCECEEIMGOEIAg@@S@KBKBEBOHCBC@[LEB[NCCCEKGMGq@WQGAAWQQKOEAAc@MCCKEWKIG[QMOWOSMq@c@GEq@c@[S]QEEGCk@[GEUMCCIEEAe@Ya@WQKWKUIQGSEEA]GUC_@AE?O?aAAC?E?C?OBEBIBKFEDEBCB[\\KVKb@?BALAHAb@AR?\\?LARId@KRCBQNEDSJO@I@UAK?E?E@EDCDGJCFMA[AUBE@G@MHCBGFKLQTEFGNGPCFGNCJIVAFABKf@ERMGKGSMKGu@e@a@UCAGCIEg@SQIICOGEAUIC?UGEAGAICi@Kq@GS?QAU?WAU?}@DKBy@FuB`@M@a@HKBKBI@SDKBE?G@C@@NBZAJAVCNCRGVCNI^GZABEROv@IRCFOPOJSHMBI@A?m@?[?a@?[AE?C?K@Q?]BQBIDIDGDGDEDIFONCDEDEDMTCLABCHCVAJAtA@H?R@N?@FTBJDJHVBDFT@HFd@BR?B@Z?b@@nA@z@@RMFYVOJIHKDWLMHI@C@QDCAO?KCOCUG]MMIKKEKGKCSAO?c@?U?]AUOo@I]Oe@Qa@IMCEEEKKIGg@[]OSKa@SiAe@YKA?MCYEQAQ@E?OBI@]JI@E@QDODODQDC?i@LeATKBO@U?E@K?C?C?C?K@?P?DANEtAAb@A^A\\?DARARAP?T?UAb@AZ?@?FAL?BC?K?_@A]?gA?I?i@Ae@?E?w@AM?C?e@?}@A]?Q?U?cAAi@?W@W@E?_@DYBK@ODUDsAZ[FA@?C??AME[COGg@B[Mw@Io@Ku@EGKQIu@E[COIm@EYCSBAVEVG\\ITE@A@?\\IXILGVKFCPINGNGJGBAJCVKPGRGTIXIFAb@Mj@Mp@OLELCPEVIDADATGPCHCXG^IXAVAL?`ACDAX?jAEF?HANACo@?GKiDC_@@@J?~@Bj@@L?F\\DV@FF\\Jl@Hh@BHHf@PhA@HBJPlAV|AD\\@F@BBNNEPENCPGJCXED?PAT@TDLB@?XJhAd@`@R@@n@Xd@XFFNLDDBDHLP`@Nd@H\\Nn@@T?\\?T?b@@NBRDFFNJJLH\\LTFNBJBN?B@PEDAFALIVMJEDEROXWLGASA{@AoA?c@A[ASACGe@AIK[IWEKCKCICMAO?SAI@w@?]@IBS?EDMBMR[HKNOHG@AJIFELGDCPC\\C\\AB?bA@Z?l@?JALCPGPMRYFSRy@BQ@CF[Jc@@KFWDW@KFYDODU@EFKJGDCTEJC`@ILAfB]LCl@GVC|@ER?V@j@@P?p@Fh@JHBLBZFHDHBD@B@JDHBPHf@RHDFBB@`@T`Al@FBJHJFLFF[H_@BKHWBKBGFOBILWR]RUDCLIFABAJAFAX?B@N@LJFBJL@@JPJVBAFAJEDEDE@OAICECECCEAG@E?C@????A?IFKJJPBHFLDZ?B@v@@J?P@f@Ld@JPBDLJDBRHZHD?f@L`@Jz@R`ALn@Hj@D\\AHCREJC^WLO@ANW@CLY?E@C@GBO@K@CHyB@_@@s@@Q?G?EDaA@E@Q@GBMDKDILUZQFC\\EXDVNb@T`@Tf@\\\\VDBRNXPDBJDTJB@HBTJJDXHTBXDPFb@NLFHDNHDH@?@HBR?H?DAHALAHEPCFm@~BCFAHAL@H@BDFBBHDD@v@RTDLFDBDDTXJLNHn@cDTiAHe@Je@"
+      }
+    ],
+    "Routes": [
+      {
+        "id": 5750,
+        "color": {
+          "r": 167,
+          "g": 54,
+          "b": 178
+        },
+        "short_name": "A|CE",
+        "long_name": "A | Central East",
+        "isAthensBus": false,
+        "new_id": "5750",
+        "old_id": "4921",
+        "hex": "075CFF"
+      }
+    ],
+    "routeStopSequence": [
+      {
+        "id": "r_5750__s_155093",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155093,
+        "stopName": "Intramural Deck",
+        "stopSequence": 0
+      },
+      {
+        "id": "r_5750__s_155135",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155135,
+        "stopName": "Lot E01",
+        "stopSequence": 1
+      },
+      {
+        "id": "r_5750__s_155094",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155094,
+        "stopName": "East Campus Village",
+        "stopSequence": 2
+      },
+      {
+        "id": "r_5750__s_155113",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155113,
+        "stopName": "Tucker Hall NB",
+        "stopSequence": 3
+      },
+      {
+        "id": "r_5750__s_155111",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155111,
+        "stopName": "I-STEM/Food Science WB",
+        "stopSequence": 4
+      },
+      {
+        "id": "r_5750__s_155108",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155108,
+        "stopName": "Cedar St Science Complex WB",
+        "stopSequence": 5
+      },
+      {
+        "id": "r_5750__s_155104",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155104,
+        "stopName": "Physics NB",
+        "stopSequence": 6
+      },
+      {
+        "id": "r_5750__s_155100",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155100,
+        "stopName": "Tate Center - Memorial Hall",
+        "stopSequence": 7
+      },
+      {
+        "id": "r_5750__s_155097",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155097,
+        "stopName": "Lumpkin St @ Wray St NB",
+        "stopSequence": 8
+      },
+      {
+        "id": "r_5750__s_155086",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155086,
+        "stopName": "The Arch/Downtown",
+        "stopSequence": 9
+      },
+      {
+        "id": "r_5750__s_155085",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155085,
+        "stopName": "Main Library",
+        "stopSequence": 10
+      },
+      {
+        "id": "r_5750__s_155099",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155099,
+        "stopName": "Tate Center - Instructional Plaza",
+        "stopSequence": 11
+      },
+      {
+        "id": "r_5750__s_155101",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155101,
+        "stopName": "Tate Center - MLC",
+        "stopSequence": 12
+      },
+      {
+        "id": "r_5750__s_155105",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155105,
+        "stopName": "Physics SB",
+        "stopSequence": 13
+      },
+      {
+        "id": "r_5750__s_155109",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155109,
+        "stopName": "Cedar St Science Complex EB",
+        "stopSequence": 14
+      },
+      {
+        "id": "r_5750__s_155110",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155110,
+        "stopName": "I-STEM/Food Science EB",
+        "stopSequence": 15
+      },
+      {
+        "id": "r_5750__s_155114",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155114,
+        "stopName": "Tucker Hall SB",
+        "stopSequence": 16
+      },
+      {
+        "id": "r_5750__s_155132",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155132,
+        "stopName": "Joe Frank Harris Commons",
+        "stopSequence": 17
+      },
+      {
+        "id": "r_5750__s_155133",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155133,
+        "stopName": "University Health Center",
+        "stopSequence": 18
+      },
+      {
+        "id": "r_5750__s_155093",
+        "routeId": 5750,
+        "direction": 0,
+        "directionName": "",
+        "stopId": 155093,
+        "stopName": "Intramural Deck",
+        "stopSequence": 19
+      }
+    ]
+  },
+  "infoDetail": {
+    "Color": "fc0004",
+    "Directions": [
+      {
+        "Dir": "EB",
+        "DirectionDesc": null,
+        "DirectionIconFileName": null
+      },
+      {
+        "Dir": "WB",
+        "DirectionDesc": null,
+        "DirectionIconFileName": null
+      }
+    ],
+    "GoogleDescription": null,
+    "Group": null,
+    "IncludeInGoogle": true,
+    "IsHeadway": false,
+    "IsHeadwayMonitored": false,
+    "IsVisible": true,
+    "IvrDescription": "Red Link",
+    "LongName": "Red Link",
+    "Messages": [],
+    "RouteAbbreviation": "RL",
+    "RouteId": 51,
+    "RouteRecordId": 514,
+    "RouteStops": [
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 3,
+        "StopId": 4
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 4,
+        "StopId": 51
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 5,
+        "StopId": 148
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 6,
+        "StopId": 149
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 3,
+        "StopId": 154
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 4,
+        "StopId": 155
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 7,
+        "StopId": 287
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 2,
+        "StopId": 355
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 5,
+        "StopId": 356
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 6,
+        "StopId": 357
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 1,
+        "StopId": 569
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 8,
+        "StopId": 569
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 7,
+        "StopId": 572
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 1,
+        "StopId": 873
+      },
+      {
+        "Direction": "WB",
+        "RouteId": 51,
+        "SortOrder": 8,
+        "StopId": 873
+      },
+      {
+        "Direction": "EB",
+        "RouteId": 51,
+        "SortOrder": 2,
+        "StopId": 874
+      }
+    ],
+    "RouteTraceFilename": "Route51.kml",
+    "RouteTraceHash64": null,
+    "ShortName": "RL",
+    "SortOrder": 15,
+    "Stops": [
+      {
+        "Description": "Pattee Transit Center Eastbound",
+        "IsTimePoint": true,
+        "Latitude": 40.797836,
+        "Longitude": -77.866722,
+        "Name": "Pattee Transit Center Eastbound",
+        "StopId": 4,
+        "StopRecordId": 152
+      },
+      {
+        "Description": "Curtin Rd at Pavilion Theatre",
+        "IsTimePoint": false,
+        "Latitude": 40.80088,
+        "Longitude": -77.86465,
+        "Name": "Curtin Rd at Pavilion Theatre",
+        "StopId": 51,
+        "StopRecordId": 1674
+      },
+      {
+        "Description": "Curtin Rd at McCoy Natatorium",
+        "IsTimePoint": false,
+        "Latitude": 40.80519,
+        "Longitude": -77.86056,
+        "Name": "Curtin Rd at McCoy Natatorium",
+        "StopId": 148,
+        "StopRecordId": 158
+      },
+      {
+        "Description": "Curtin Rd at Shields Building",
+        "IsTimePoint": false,
+        "Latitude": 40.80713,
+        "Longitude": -77.85871,
+        "Name": "Curtin Rd at Shields Building",
+        "StopId": 149,
+        "StopRecordId": 159
+      },
+      {
+        "Description": "Curtin Rd at the Intramural Building",
+        "IsTimePoint": false,
+        "Latitude": 40.807,
+        "Longitude": -77.859,
+        "Name": "Curtin Rd at the Intramural Building",
+        "StopId": 154,
+        "StopRecordId": 164
+      },
+      {
+        "Description": "East Halls at Curtin Hall",
+        "IsTimePoint": false,
+        "Latitude": 40.80513,
+        "Longitude": -77.86076,
+        "Name": "East Halls at Curtin Hall",
+        "StopId": 155,
+        "StopRecordId": 165
+      },
+      {
+        "Description": "Curtin Rd at Bryce Jordan Center",
+        "IsTimePoint": true,
+        "Latitude": 40.81014,
+        "Longitude": -77.85581,
+        "Name": "Curtin Rd at Bryce Jordan Center",
+        "StopId": 287,
+        "StopRecordId": 1473
+      },
+      {
+        "Description": "Curtin Rd at Stadium West Parking Lot",
+        "IsTimePoint": true,
+        "Latitude": 40.81015,
+        "Longitude": -77.85595,
+        "Name": "Curtin Rd at Stadium West Parking Lot",
+        "StopId": 355,
+        "StopRecordId": 1559
+      },
+      {
+        "Description": "Curtin Rd at Visual Arts Building",
+        "IsTimePoint": false,
+        "Latitude": 40.80094,
+        "Longitude": -77.86477,
+        "Name": "Curtin Rd at Visual Arts Building",
+        "StopId": 356,
+        "StopRecordId": 365
+      },
+      {
+        "Description": "Pattee Transit Center Westbound",
+        "IsTimePoint": true,
+        "Latitude": 40.79739,
+        "Longitude": -77.86752,
+        "Name": "Pattee Transit Center Westbound",
+        "StopId": 357,
+        "StopRecordId": 366
+      },
+      {
+        "Description": "Porter Rd at Medlar Field",
+        "IsTimePoint": true,
+        "Latitude": 40.811206,
+        "Longitude": -77.852586,
+        "Name": "Porter Rd at Medlar Field",
+        "StopId": 569,
+        "StopRecordId": 1498
+      },
+      {
+        "Description": "EES Building WB",
+        "IsTimePoint": false,
+        "Latitude": 40.7936316695,
+        "Longitude": -77.8705748893,
+        "Name": "EES Building WB",
+        "StopId": 572,
+        "StopRecordId": 1593
+      },
+      {
+        "Description": "West Deck",
+        "IsTimePoint": true,
+        "Latitude": 40.7915728027,
+        "Longitude": -77.8721259711,
+        "Name": "West Deck",
+        "StopId": 873,
+        "StopRecordId": 1496
+      },
+      {
+        "Description": "EES Building EB",
+        "IsTimePoint": false,
+        "Latitude": 40.7933165657,
+        "Longitude": -77.8707751248,
+        "Name": "EES Building EB",
+        "StopId": 874,
+        "StopRecordId": 1587
+      }
+    ],
+    "TextColor": "ffffff",
+    "Vehicles": [
+      {
+        "BlockFareboxId": 19,
+        "CommStatus": "GOOD",
+        "Destination": "West Campus",
+        "Deviation": 2,
+        "Direction": "WB",
+        "DirectionLong": "West",
+        "DisplayStatus": "Late",
+        "StopId": 0,
+        "CurrentStatus": null,
+        "VehicleFareboxId": 208,
+        "GPSStatus": 2,
+        "Heading": 216,
+        "LastStop": "Curtin Rd at Stadium West Parking Lot",
+        "LastUpdated": "/Date(1794522551000-0500)/",
+        "Latitude": 40.808643,
+        "Longitude": -77.857387,
+        "Name": "208",
+        "OccupancyStatus": 1,
+        "OnBoard": 5,
+        "OpStatus": "ONTIME",
+        "RouteId": 51,
+        "RunId": 34,
+        "Speed": 8,
+        "TripId": 1724,
+        "VehicleId": 208,
+        "SeatingCapacity": 36,
+        "TotalCapacity": 80,
+        "PropertyName": "CATA",
+        "OccupancyStatusReportLabel": "Many Seats Available"
+      },
+      {
+        "BlockFareboxId": 17,
+        "CommStatus": "GOOD",
+        "Destination": "West Campus",
+        "Deviation": 7,
+        "Direction": "WB",
+        "DirectionLong": "West",
+        "DisplayStatus": "Late",
+        "StopId": 0,
+        "CurrentStatus": null,
+        "VehicleFareboxId": 206,
+        "GPSStatus": 2,
+        "Heading": 276,
+        "LastStop": "Pattee Transit Center Westbound",
+        "LastUpdated": "/Date(1794522551000-0500)/",
+        "Latitude": 40.796585,
+        "Longitude": -77.869021,
+        "Name": "206",
+        "OccupancyStatus": 1,
+        "OnBoard": 15,
+        "OpStatus": "LATE",
+        "RouteId": 51,
+        "RunId": 30,
+        "Speed": 2,
+        "TripId": 1712,
+        "VehicleId": 206,
+        "SeatingCapacity": 36,
+        "TotalCapacity": 80,
+        "PropertyName": "CATA",
+        "OccupancyStatusReportLabel": "Many Seats Available"
+      },
+      {
+        "BlockFareboxId": 18,
+        "CommStatus": "GOOD",
+        "Destination": "Medlar Field",
+        "Deviation": 1,
+        "Direction": "EB",
+        "DirectionLong": "East",
+        "DisplayStatus": "On Time",
+        "StopId": 0,
+        "CurrentStatus": null,
+        "VehicleFareboxId": 38,
+        "GPSStatus": 2,
+        "Heading": 36,
+        "LastStop": "Pattee Transit Center Eastbound",
+        "LastUpdated": "/Date(1794522557000-0500)/",
+        "Latitude": 40.80062,
+        "Longitude": -77.864987,
+        "Name": "38",
+        "OccupancyStatus": 1,
+        "OnBoard": 7,
+        "OpStatus": "ONTIME",
+        "RouteId": 51,
+        "RunId": 26,
+        "Speed": 11,
+        "TripId": 1721,
+        "VehicleId": 38,
+        "SeatingCapacity": 36,
+        "TotalCapacity": 80,
+        "PropertyName": "CATA",
+        "OccupancyStatusReportLabel": "Many Seats Available"
+      }
+    ],
+    "DetourActiveMessageCount": 0
+  },
+  "infoDirections": [
+    {
+      "Dir": "EB",
+      "DirectionDesc": "East",
+      "DirectionIconFileName": null
+    },
+    {
+      "Dir": "WB",
+      "DirectionDesc": "West",
+      "DirectionIconFileName": null
+    }
+  ],
+  "infoDirectionStops": [
+    {
+      "Description": "Pattee Transit Center Eastbound",
+      "IsTimePoint": true,
+      "Latitude": 40.797836,
+      "Longitude": -77.866722,
+      "Name": "Pattee Transit Center Eastbound",
+      "StopId": 4,
+      "StopRecordId": 152
+    },
+    {
+      "Description": "Curtin Rd at Pavilion Theatre",
+      "IsTimePoint": false,
+      "Latitude": 40.80088,
+      "Longitude": -77.86465,
+      "Name": "Curtin Rd at Pavilion Theatre",
+      "StopId": 51,
+      "StopRecordId": 1674
+    },
+    {
+      "Description": "Curtin Rd at McCoy Natatorium",
+      "IsTimePoint": false,
+      "Latitude": 40.80519,
+      "Longitude": -77.86056,
+      "Name": "Curtin Rd at McCoy Natatorium",
+      "StopId": 148,
+      "StopRecordId": 158
+    },
+    {
+      "Description": "Curtin Rd at Shields Building",
+      "IsTimePoint": false,
+      "Latitude": 40.80713,
+      "Longitude": -77.85871,
+      "Name": "Curtin Rd at Shields Building",
+      "StopId": 149,
+      "StopRecordId": 159
+    },
+    {
+      "Description": "Curtin Rd at Bryce Jordan Center",
+      "IsTimePoint": true,
+      "Latitude": 40.81014,
+      "Longitude": -77.85581,
+      "Name": "Curtin Rd at Bryce Jordan Center",
+      "StopId": 287,
+      "StopRecordId": 1473
+    },
+    {
+      "Description": "Porter Rd at Medlar Field",
+      "IsTimePoint": true,
+      "Latitude": 40.811206,
+      "Longitude": -77.852586,
+      "Name": "Porter Rd at Medlar Field",
+      "StopId": 569,
+      "StopRecordId": 1498
+    },
+    {
+      "Description": "West Deck",
+      "IsTimePoint": true,
+      "Latitude": 40.7915728027,
+      "Longitude": -77.8721259711,
+      "Name": "West Deck",
+      "StopId": 873,
+      "StopRecordId": 1496
+    },
+    {
+      "Description": "EES Building EB",
+      "IsTimePoint": false,
+      "Latitude": 40.7933165657,
+      "Longitude": -77.8707751248,
+      "Name": "EES Building EB",
+      "StopId": 874,
+      "StopRecordId": 1587
+    }
+  ],
+  "infoStop": {
+    "Description": "E. College Ave at S. Allen Street",
+    "IsTimePoint": true,
+    "Latitude": 40.794559,
+    "Longitude": -77.861549,
+    "Name": "E. College Ave at S. Allen Street",
+    "StopId": 1,
+    "StopRecordId": 149
+  },
+  "infoDepartures": [
+    {
+      "LastUpdated": "/Date(1794522547450-0500)/",
+      "RouteDirections": [
+        {
+          "Departures": [
+            {
+              "ADT": null,
+              "ADTLocalTime": null,
+              "ATA": null,
+              "ATALocalTime": null,
+              "Bay": null,
+              "Dev": "00:00:00",
+              "EDT": "/Date(1794522780000-0500)/",
+              "EDTLocalTime": "2026-11-12T17:33:00",
+              "ETA": "/Date(1794522684000-0500)/",
+              "ETALocalTime": "2026-11-12T17:31:24",
+              "IsCompleted": false,
+              "IsLastStopOnTrip": false,
+              "LastUpdated": "/Date(1794522507813-0500)/",
+              "LastUpdatedLocalTime": "2026-11-12T17:28:27",
+              "Mode": 0,
+              "ModeReportLabel": "Normal",
+              "PropogationStatus": 0,
+              "SDT": "/Date(1794522780000-0500)/",
+              "SDTLocalTime": "2026-11-12T17:33:00",
+              "STA": "/Date(1794522660000-0500)/",
+              "STALocalTime": "2026-11-12T17:31:00",
+              "StopFlag": 0,
+              "StopStatus": 0,
+              "StopStatusReportLabel": "Scheduled",
+              "Trip": {
+                "BlockFareboxId": 31,
+                "GtfsTripId": "t6BA-b1F-sl5A",
+                "InternalSignDesc": "Valley Vista/Lowes Ctr",
+                "InternetServiceDesc": "Valley Vista/Lowes Ctr",
+                "IVRServiceDesc": null,
+                "StopSequence": 660,
+                "TripDirection": "NB",
+                "TripId": 1722,
+                "TripRecordId": 359085,
+                "TripStartTime": "/Date(-2208908280000-0500)/",
+                "TripStartTimeLocalTime": "1900-01-01T17:22:00",
+                "TripStatus": 0,
+                "TripStatusReportLabel": "Scheduled"
+              },
+              "PropertyName": "CATA"
+            },
+            {
+              "ADT": null,
+              "ADTLocalTime": null,
+              "ATA": null,
+              "ATALocalTime": null,
+              "Bay": null,
+              "Dev": "00:00:00",
+              "EDT": "/Date(1794524700000-0500)/",
+              "EDTLocalTime": "2026-11-12T18:05:00",
+              "ETA": "/Date(1794524580000-0500)/",
+              "ETALocalTime": "2026-11-12T18:03:00",
+              "IsCompleted": false,
+              "IsLastStopOnTrip": false,
+              "LastUpdated": "/Date(1794522506727-0500)/",
+              "LastUpdatedLocalTime": "2026-11-12T17:28:26",
+              "Mode": 0,
+              "ModeReportLabel": "Normal",
+              "PropogationStatus": 0,
+              "SDT": "/Date(1794524700000-0500)/",
+              "SDTLocalTime": "2026-11-12T18:05:00",
+              "STA": "/Date(1794524580000-0500)/",
+              "STALocalTime": "2026-11-12T18:03:00",
+              "StopFlag": 0,
+              "StopStatus": 0,
+              "StopStatusReportLabel": "Scheduled",
+              "Trip": {
+                "BlockFareboxId": 33,
+                "GtfsTripId": "t6DA-b21-sl5A",
+                "InternalSignDesc": "Valley Vista/Lowes Ctr",
+                "InternetServiceDesc": "Valley Vista/Lowes Ctr",
+                "IVRServiceDesc": null,
+                "StopSequence": 660,
+                "TripDirection": "NB",
+                "TripId": 1754,
+                "TripRecordId": 359326,
+                "TripStartTime": "/Date(-2208906360000-0500)/",
+                "TripStartTimeLocalTime": "1900-01-01T17:54:00",
+                "TripStatus": 0,
+                "TripStatusReportLabel": "Scheduled"
+              },
+              "PropertyName": "CATA"
+            }
+          ],
+          "Direction": "North",
+          "DirectionCode": "NB",
+          "HeadwayDepartures": null,
+          "IsDone": false,
+          "IsHeadway": false,
+          "IsHeadwayMonitored": false,
+          "RouteId": 71,
+          "RouteRecordId": 562
+        }
+      ],
+      "StopId": 1,
+      "StopRecordId": 149
+    }
+  ],
+  "infoConfig": {
+    "BaseUrl": "https://realtime.catabus.com:443/InfoPoint/",
+    "KmlUrl": "Resources/Traces/",
+    "VehicleRefreshInterval": 20
+  },
+  "infoMessages": [
+    {
+      "Message": "Service notice",
+      "Published": true
+    }
+  ]
+}
