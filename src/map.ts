@@ -13,7 +13,9 @@ export class TransitMap {
   private points = L.layerGroup();
 
   constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void) {
-    this.map = L.map(element, { zoomControl: false }).setView([center.lat, center.lon], 14);
+    // Leaflet 1.9 queues zoom callbacks that can outlive a removed map. Use immediate
+    // zooms so navigation can safely destroy a map in the same animation frame.
+    this.map = L.map(element, { zoomControl: false, zoomAnimation: false, fadeAnimation: false }).setView([center.lat, center.lon], 14);
     L.control.zoom({ position: 'bottomright' }).addTo(this.map);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -22,7 +24,6 @@ export class TransitMap {
     this.routes.addTo(this.map); this.stops.addTo(this.map); this.vehicles.addTo(this.map);
     this.journey.addTo(this.map); this.points.addTo(this.map);
     this.map.on('click', event => { const point = event.latlng.wrap(); onPick?.({ lat: point.lat, lon: point.lng }); });
-    window.setTimeout(() => this.map.invalidateSize(), 0);
   }
 
   showRoute(detail: RouteDetail, onStop: (stop: Stop) => void, direction?: string) {
@@ -41,7 +42,7 @@ export class TransitMap {
     }
     this.showVehicles(detail.vehicles, detail.route.color);
     const bounds = this.routes.getBounds().extend(this.stops.getBounds());
-    if (bounds.isValid()) this.map.fitBounds(bounds.pad(.12), { maxZoom: 16 });
+    if (bounds.isValid()) this.map.fitBounds(bounds.pad(.12), { maxZoom: 16, animate: false });
   }
 
   showVehicles(vehicles: Vehicle[], color: string) {
@@ -74,10 +75,10 @@ export class TransitMap {
       }).addTo(this.journey);
     }
     const bounds = this.journey.getBounds();
-    if (bounds.isValid()) this.map.fitBounds(bounds.pad(.15), { maxZoom: 17 });
+    if (bounds.isValid()) this.map.fitBounds(bounds.pad(.15), { maxZoom: 17, animate: false });
   }
 
-  focus(point: Coordinate) { this.map.setView([point.lat, point.lon], 15); }
+  focus(point: Coordinate) { this.map.setView([point.lat, point.lon], 15, { animate: false }); }
   clearJourney() { this.journey.clearLayers(); }
   destroy() { this.map.remove(); }
 }

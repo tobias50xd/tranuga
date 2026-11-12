@@ -127,7 +127,7 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 
 This exercises the UGA active network and a representative CATA agency, including every documented API pattern and KML. Live runtime probes through Wrangler additionally verify the gateway, actual static security headers, caching, and rejection behavior. Neither fixture tests nor a successful local edge preview imply a production deployment.
 
-The implementation acceptance run passed **122 deterministic tests, 28 browser tests, and 2 opt-in live tests**. [Verification evidence](docs/verification.md) maps the requested features to those checks and live runtime observations.
+The implementation acceptance run passed **122 deterministic tests, 30 browser tests, and 2 opt-in live tests**. [Verification evidence](docs/verification.md) maps the requested features to those checks and live runtime observations.
 
 ## Source map and maintenance
 

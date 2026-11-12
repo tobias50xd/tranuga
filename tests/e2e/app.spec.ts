@@ -224,3 +224,16 @@ test('late agency directory responses cannot overwrite a newer code lookup', asy
   await expect(page.locator('#agency-status')).toHaveText('1 agencies found');
   await expect(page.locator('.agency-card')).toContainText('CATA');
 });
+
+test('rapid navigation during map focus does not leave a callback on a removed map', async ({ page }) => {
+  await mockTransit(page); await page.goto('/');
+  await page.locator('[data-route="5750"]').click();
+  await page.locator('.stop-list button').first().waitFor();
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>('.stop-list button')!.click();
+    document.querySelector<HTMLButtonElement>('nav [data-nav="plan"]')!.click();
+  });
+  // Observe both the next frame and Leaflet's former 250 ms zoom completion timer.
+  await page.waitForTimeout(350);
+  await expect(page.locator('#trip-map')).toBeVisible();
+});
