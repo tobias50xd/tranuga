@@ -4,6 +4,12 @@ The November 13 UI refactor acceptance run passed **385 deterministic tests and 
 
 The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/runs/43353286621) completed verification and deployment successfully, publishing [tranuga.tobias-seeanner.workers.dev](https://tranuga.tobias-seeanner.workers.dev). Inspect the latest action for publication of subsequent revisions; local validation alone is not a deployment result.
 
+## Dark mode and Athens lock — November 13
+
+The main-menu controls remember theme and area settings. Athens lock defaults to on, offers only the reviewed Georgia networks, filters foreign buses and trip points, and constrains route/planner maps to a responsive whole-Athens overview. Dark mode covers the interface and map tile/control palette. The shared rectangle includes all 608 reviewed local stops.
+
+Validation passed **393 deterministic tests** (eight opt-in live cases skipped), **66 desktop/mobile browser tests**, TypeScript, the production build and the Cloudflare bundle dry run. Browser checks include default/persisted preferences, blocked storage, local/global network switching, outside-bus polling, address/location guards, whole-area fit, responsive zoom limits and unlocked navigation. The palette/overview checks passed again after the final contrast adjustment. Earlier dated suite totals below describe their own snapshots.
+
 ## UI refactor evidence — November 13
 
 - Kept Leaflet/OpenStreetMap; no map-key or Google Maps dependency was added.

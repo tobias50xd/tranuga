@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import type { Coordinate, Network, RouteDetail, Stop, Vehicle } from './types';
 import type { Journey } from './planner';
 import { escapeHtml as e, safeColor, vehicleAge, headingLabel } from './ui';
+import { ATHENS_BOUNDS, inAthens } from './athens';
 
 export class TransitMap {
   private map: L.Map;
@@ -11,11 +12,13 @@ export class TransitMap {
   private vehicles = L.featureGroup();
   private journey = L.featureGroup();
   private points = L.layerGroup();
+  private athensLocked: boolean;
 
-  constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void) {
+  constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void, athensLocked = false) {
+    this.athensLocked = athensLocked;
     // Leaflet 1.9 queues zoom callbacks that can outlive a removed map. Use immediate
     // zooms so navigation can safely destroy a map in the same animation frame.
-    this.map = L.map(element, { zoomControl: false, zoomAnimation: false, fadeAnimation: false }).setView([center.lat, center.lon], 14);
+    this.map = L.map(element, { zoomControl: false, zoomAnimation: false, fadeAnimation: false, zoomSnap: .25, maxBoundsViscosity: 1, bounceAtZoomLimits: !athensLocked }).setView([center.lat, center.lon], 14);
     L.control.zoom({ position: 'bottomright' }).addTo(this.map);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -23,7 +26,20 @@ export class TransitMap {
     }).addTo(this.map);
     this.routes.addTo(this.map); this.stops.addTo(this.map); this.vehicles.addTo(this.map);
     this.journey.addTo(this.map); this.points.addTo(this.map);
-    this.map.on('click', event => { const point = event.latlng.wrap(); onPick?.({ lat: point.lat, lon: point.lng }); });
+    this.map.on('click', event => { const point = { lat: event.latlng.wrap().lat, lon: event.latlng.wrap().lng }; if (!this.athensLocked || inAthens(point)) onPick?.(point); });
+    if (this.athensLocked) {
+      const bounds = L.latLngBounds([ATHENS_BOUNDS.south, ATHENS_BOUNDS.west], [ATHENS_BOUNDS.north, ATHENS_BOUNDS.east]);
+      const restrict = () => {
+        this.map.setMinZoom(0);
+        const minimum = this.map.getBoundsZoom(bounds, false, L.point(24, 24));
+        this.map.setMinZoom(minimum); this.map.setMaxBounds(bounds);
+        // At the overview scale, center the entire city rather than its last focused stop.
+        if (this.map.getZoom() <= minimum) this.map.setView(bounds.getCenter(), minimum, { animate: false });
+      };
+      this.map.on('resize', restrict);
+      this.map.on('zoomend', () => { if (this.map.getZoom() <= this.map.getMinZoom()) this.map.panTo(bounds.getCenter(), { animate: false }); });
+      restrict();
+    }
   }
 
   showRoute(detail: RouteDetail, onStop: (stop: Stop) => void, direction?: string) {
@@ -35,6 +51,7 @@ export class TransitMap {
     }
     const visibleStops = direction ? [...new Map(patterns.flatMap(p => p.stops).map(s => [s.id, s])).values()] : detail.stops;
     for (const stop of visibleStops) {
+      if (this.athensLocked && !inAthens(stop)) continue;
       const marker = L.circleMarker([stop.lat, stop.lon], { radius: 5, color: '#172721', weight: 2, fillColor: '#fff', fillOpacity: 1 });
       marker.bindTooltip(e(stop.name));
       marker.on('click', () => onStop(stop));
@@ -51,6 +68,7 @@ export class TransitMap {
   }
 
   private addVehicle(bus: Vehicle, color: string, routeName?: string) {
+    if (this.athensLocked && !inAthens(bus)) return;
     const stale = !bus.updatedAt || Date.now() - bus.updatedAt > 120000;
     const icon = L.divIcon({ className: 'bus-marker', html: `<span class="bus-pointer ${stale ? 'stale' : ''}" style="--bus-color:${safeColor(color)};--heading:${Number.isFinite(bus.heading) ? bus.heading : 0}deg"><span>↑</span></span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
     L.marker([bus.lat, bus.lon], { icon, title: `Bus ${bus.id}, ${headingLabel(bus.heading)}` })
@@ -61,7 +79,7 @@ export class TransitMap {
   showPoints(origin?: Coordinate, destination?: Coordinate) {
     this.points.clearLayers();
     for (const [point, label, color] of [[origin, 'A', '#172721'], [destination, 'B', '#b92535']] as const) {
-      if (point) L.marker([point.lat, point.lon], { icon: L.divIcon({ className: 'point-marker', html: `<span style="background:${color}">${label}</span>`, iconSize: [30, 36], iconAnchor: [15, 36] }) }).addTo(this.points);
+      if (point && (!this.athensLocked || inAthens(point))) L.marker([point.lat, point.lon], { icon: L.divIcon({ className: 'point-marker', html: `<span style="background:${color}">${label}</span>`, iconSize: [30, 36], iconAnchor: [15, 36] }) }).addTo(this.points);
     }
   }
 
@@ -106,7 +124,7 @@ export class TransitMap {
     if (bounds.isValid()) this.map.fitBounds(bounds.pad(.15), { maxZoom: 17, animate: false });
   }
 
-  focus(point: Coordinate) { this.map.setView([point.lat, point.lon], 15, { animate: false }); }
+  focus(point: Coordinate) { if (!this.athensLocked || inAthens(point)) this.map.setView([point.lat, point.lon], 15, { animate: false }); }
   clearJourney() { this.journey.clearLayers(); }
   destroy() { this.map.remove(); }
 }

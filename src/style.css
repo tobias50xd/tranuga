@@ -44,3 +44,60 @@ footer{display:block}.footer-main{display:flex;align-items:center;gap:12px 25px;
 .trip-lines strong{font-size:.78rem;line-height:1.35}
 .trip-lines small{font-size:.65rem;color:var(--muted);margin-top:3px;line-height:1.35}
 @media(max-width:680px){.planner-map-wrap{position:relative}}
+
+/* Main-menu preferences remain available in every view. */
+[hidden]{display:none!important}
+.header-inner{gap:22px}
+.menu-preferences{display:flex;align-items:center;gap:8px;margin-left:4px}
+nav .menu-toggle{height:auto;display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:5px;font-size:.73rem;white-space:nowrap;color:var(--ink)}
+.menu-toggle svg{width:17px;height:17px;flex:none}
+nav .menu-toggle span{margin:0;font-size:.62rem;color:var(--muted)}
+nav .menu-toggle[aria-pressed=true]{background:#e8efdf;border-color:#b7c9ab}
+nav .menu-toggle:hover{border-color:#879a7e}
+@media(max-width:1100px){.header-inner{height:auto;min-height:90px;flex-wrap:wrap;padding-top:14px;gap:0 20px}.header-inner nav{order:3;width:100%;justify-content:space-between;height:auto;gap:18px}.header-inner nav>[data-nav]{height:46px}.place{margin-left:auto}.menu-preferences{margin-left:auto}}
+@media(max-width:680px){.header-inner{padding-top:16px}.header-inner nav{justify-content:flex-start;flex-wrap:wrap;gap:0 25px}.menu-preferences{width:100%;margin:0 0 12px;gap:9px}nav .menu-toggle{flex:1;justify-content:center;padding:9px 8px;font-size:.74rem}.menu-toggle svg{width:16px;height:16px}}
+
+/* Dark palette also covers menus, notes, autocomplete and Leaflet's own UI. */
+:root[data-theme=dark]{color-scheme:dark;background:#121c17;color:#e5ede7;--ink:#e5ede7;--muted:#a7b7ad;--line:#3c4c42;--paper:#1d2a22;--red:#ff8997}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark] input,:root[data-theme=dark] select,:root[data-theme=dark] .place-hints{background:var(--paper);color:var(--ink);border-color:var(--line)}
+:root[data-theme=dark] input::placeholder{color:#a1afa6}
+:root[data-theme=dark] .button.primary,:root[data-theme=dark] .brand-mark{background:#a7243a;border-color:#bd4053;color:#fff}
+:root[data-theme=dark] .button.primary:hover{background:#bd2e47}
+:root[data-theme=dark] .route-card.route-active{background:#253d2d;border-color:#45694c}
+:root[data-theme=dark] .route-card.route-active:hover{background:#2b4934;border-color:#77a37f}
+:root[data-theme=dark] .route-card.route-inactive,:root[data-theme=dark] .route-card.route-unconfirmed{background:#28312c;border-color:#465049}
+:root[data-theme=dark] .route-card.route-inactive:hover,:root[data-theme=dark] .route-card.route-unconfirmed:hover{background:#313e35;border-color:#74857a}
+:root[data-theme=dark] .route-card.route-inactive h3,:root[data-theme=dark] .route-card.route-unconfirmed h3,:root[data-theme=dark] .route-card.route-inactive .card-arrow,:root[data-theme=dark] .route-card.route-unconfirmed .card-arrow{color:#b4c1b8}
+:root[data-theme=dark] .route-badge{background:color-mix(in srgb,var(--route-color,#b92535),#15221b 80%);border-color:color-mix(in srgb,var(--route-color,#b92535),#a4b8aa 45%);color:var(--ink)}
+:root[data-theme=dark] .route-card.route-inactive .route-badge,:root[data-theme=dark] .route-card.route-unconfirmed .route-badge{background:#37423b;color:#c7d2c9}
+:root[data-theme=dark] .card-bottom,:root[data-theme=dark] .stop-sequence,:root[data-theme=dark] .place-hints li+li{border-color:var(--line)}
+:root[data-theme=dark] .service-state{color:#b4bcb2}
+:root[data-theme=dark] .service-state.active,:root[data-theme=dark] .source-state.healthy{color:#9dd7ac}
+:root[data-theme=dark] .service-state.active i,:root[data-theme=dark] .status-dot{background:#8bc59a}
+:root[data-theme=dark] .catalog-note,:root[data-theme=dark] .stop-arrivals,:root[data-theme=dark] .stop-list button:hover,:root[data-theme=dark] .place-hints li:hover,:root[data-theme=dark] .place-hints li[aria-selected=true]{background:#2a3b2e}
+:root[data-theme=dark] .catalog-note p,:root[data-theme=dark] .note-number,:root[data-theme=dark] .place-hints small{color:#b9c9bc}
+:root[data-theme=dark] .map{background:#17241f}
+:root[data-theme=dark] .map-instruction{background:#1d2a22f5;border-color:var(--line);color:var(--ink)}
+:root[data-theme=dark] .trip-lines li{background:#24342a}
+:root[data-theme=dark] .note,:root[data-theme=dark] .notice{background:#23392b;border-color:#45604b;color:#c0ddc4}
+:root[data-theme=dark] .note-warning{background:#382f1d;border-color:#6b592e;color:#f0d49a}
+:root[data-theme=dark] .note-error,:root[data-theme=dark] .notice.error{background:#42232c;border-color:#78505a;color:#ffb2c0}
+:root[data-theme=dark] .error,:root[data-theme=dark] .source-state.unavailable{color:#ffabb9}
+:root[data-theme=dark] .stale-label,:root[data-theme=dark] .source-state.degraded,:root[data-theme=dark] .source-state.cached{color:#e2c483}
+:root[data-theme=dark] .estimate-badge{background:#304632;color:#c2dec3}
+:root[data-theme=dark] nav .menu-toggle[aria-pressed=true]{background:#304a34;border-color:#628169}
+:root[data-theme=dark] :is(button,a,input,select,summary):focus-visible{outline-color:#8fd3f5}
+:root[data-theme=dark] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}
+:root[data-theme=dark] .leaflet-bar a,:root[data-theme=dark] .leaflet-popup-content-wrapper,:root[data-theme=dark] .leaflet-popup-tip,:root[data-theme=dark] .leaflet-tooltip{background:var(--paper);color:var(--ink);border-color:var(--line)}
+:root[data-theme=dark] .leaflet-bar a:hover{background:#304a34}
+:root[data-theme=dark] .leaflet-bar a.leaflet-disabled{background:#28312c;color:#8c9a90}
+:root[data-theme=dark] .leaflet-control-attribution{background:#17241fe8;color:#c6d6cb}
+:root[data-theme=dark] .leaflet-control-attribution a{color:#a8cfe4}
+:root[data-theme=dark] .leaflet-container a.leaflet-popup-close-button{color:#c6d6cb}
+:root[data-theme=dark] .point-label{background:#dce8dd;color:#14241b}
+:root[data-theme=dark] .point-label.destination{background:var(--red);color:#14241b}
+:root[data-theme=dark] .leaflet-tooltip-top:before{border-top-color:var(--paper)}
+:root[data-theme=dark] .leaflet-tooltip-bottom:before{border-bottom-color:var(--paper)}
+:root[data-theme=dark] .leaflet-tooltip-left:before{border-left-color:var(--paper)}
+:root[data-theme=dark] .leaflet-tooltip-right:before{border-right-color:var(--paper)}

@@ -59,7 +59,7 @@ export class PlaceInput {
   private choices: Place[] = [];
   private list: HTMLElement;
   private status: HTMLElement;
-  constructor(private input: HTMLInputElement, private stops: () => Stop[], private bias: Coordinate, private search: PlaceSearch, private change: (place: Place | undefined, text: string) => void) {
+  constructor(private input: HTMLInputElement, private stops: () => Stop[], private bias: Coordinate, private search: PlaceSearch, private change: (place: Place | undefined, text: string) => void, private allowed: (point: Coordinate) => boolean = () => true) {
     this.list = document.getElementById(`${input.id}-hints`)!;
     this.status = document.getElementById(`${input.id}-status`)!;
     const signal = this.lifetime.signal;
@@ -79,7 +79,7 @@ export class PlaceInput {
   private select(index: number) { const place = this.choices[index]; if (!place) return; this.setValue(place.label); this.change(place, place.label); }
   private update() {
     this.close(); const query = this.input.value.trim(); if (query.length < 2 || query.length > 120 || /^[-+\d.\s,]+$/.test(query)) return;
-    this.choices = matchStops(this.stops(), query); this.draw(query.length < 3 ? 'Type at least 3 characters to search addresses.' : 'Searching addresses…');
+    this.choices = matchStops(this.stops().filter(this.allowed), query); this.draw(query.length < 3 ? 'Type at least 3 characters to search addresses.' : 'Searching addresses…');
     if (query.length < 3 || this.choices.length >= 3 || this.choices.some(place => place.label.toLocaleLowerCase() === query.toLocaleLowerCase())) { this.status.textContent = `${this.choices.length} stop suggestions. Use arrow keys and Enter to choose.`; return; }
     const revision = this.revision;
     this.timer = setTimeout(async () => {
@@ -87,7 +87,7 @@ export class PlaceInput {
       try {
         const places = await this.search.search(query, this.bias, request.signal);
         if (revision !== this.revision || request.signal.aborted) return;
-        this.choices = [...matchStops(this.stops(), query), ...places].slice(0, 8);
+        this.choices = [...matchStops(this.stops().filter(this.allowed), query), ...places.filter(this.allowed)].slice(0, 8);
         this.draw(this.choices.length ? `${this.choices.length} suggestions. Use arrow keys and Enter to choose.` : 'No matches. Try another name or use the map.');
       } catch { if (revision === this.revision && !request.signal.aborted) this.draw('Address search is unavailable. Choose a stop or use the map.'); }
     }, 500);
