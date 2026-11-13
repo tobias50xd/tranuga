@@ -1,11 +1,11 @@
 # tranuga
 
-A static bus explorer and quickest-trip estimator, deployed with GitHub Actions to Cloudflare Workers Static Assets. The browser lists routes, maps current stops and reported bus positions/headings, and computes directed bus journeys between map points or your location. Its visual design is original; APK layouts, artwork, assets and embedded keys are not build inputs.
+A static bus explorer and quickest-trip estimator, deployed with GitHub Actions to Cloudflare Workers Static Assets. The browser lists routes, maps current stops and reported bus positions/headings, and computes directed bus journeys between named stops, addresses, map points or your location. Its visual design is original; APK layouts, artwork, assets and embedded keys are not build inputs.
 
 ## Use the app
 
-- **Routes:** browse every returned route, search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
-- **Plan a trip:** enter decimal `latitude, longitude`, pick either point on the map, or choose **My location** for the start. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions.
+- **Routes:** browse every returned route with active service first and a light green tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
+- **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions.
 - **Data reliability:** inspect responding sources, disagreements and saved-backup state. **Sync all sources** crawls the selected network's full route/stop/prediction data. One responding source can provide a labeled fallback; compatible reports from two replicas take precedence over an outlier.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
 - **Networks:** use the combined Georgia network, UGA's Passio network, the requested Athens Public Transit network in Ohio, or a reviewed InfoPoint agency. Search the directory, locate a nearby agency, or enter an authority code.
@@ -26,6 +26,53 @@ The requested [Athens Passio website](https://athenstransit.passiogo.com/) is **
 Passio nodes are `https://passiogo.com`, `https://replicated2of3.passiogo.com`, and `https://replicated3of3.passiogo.com`. A two-of-three result means **transport replica agreement**, not independent GPS measurements or guaranteed truth. The UGA portal and its overlapping providers also appear to share upstream data. Missing operator coverage abstains from comparison.
 
 The [reviewed crosswalk](src/data/athens-crosswalk.json) contains 35 route aliases, 608 stop aliases and 19 observed fleet aliases. It preserves route variants and source-native IDs. Current ordered stops proved 49 direction-pair matches and four conflicting city patterns. Similar names, nearby coordinates and numeric ID suffixes do not create new aliases. [Replication evidence](docs/replication-evidence.md) records the observations, inverted UGA city direction labels, stale static-coordinate anomalies and source hashes. [Replication behavior](docs/replication.md) explains selection and fallback rules.
+
+## Travel notes and service states
+
+Notes use a consistent line icon, a short title, a plain-language explanation and, when needed, expandable **Source details** containing the original provider/diagnostic text. Repeated technical warnings of the same class share a card; distinct operator alerts remain distinct and retain their full wording. Error messages appear before warnings, then informational notes. Text labels convey meaning alongside color; icons are decorative to screen readers.
+
+| Class (`data-note-kind`) | Icon | Meaning and action |
+| --- | --- | --- |
+| `service` | Bus | Operator service update: read the original alert. |
+| `availability` | Warning triangle | Some routes lack confirmed service or usable stops and are excluded from planning. |
+| `backup` | Archive | Another source or a saved snapshot is being used; check its age. |
+| `freshness` | Clock | Old/unknown observation times: check bus update labels. |
+| `comparison` | Comparison squares | Sources disagree; unresolved stop order is excluded from planning. |
+| `estimate` | Calculator | Timing or walking is estimated; allow extra time. |
+| `connection` | Disconnected Wi-Fi | A request failed; retry and inspect source details. |
+| `action` | Map pin | Select the trip points or recover from a location error. |
+| `info` | Information circle | Additional context that does not imply an error. |
+
+Informational cards use a quiet green tone, warnings amber, and action/request errors red with `role="alert"`. The mapping lives in [notes.ts](src/notes.ts); it organizes messages for display without changing source status, service availability or planner decisions. Operator alert text is escaped and never rendered as HTML. Service cards sort confirmed active routes first, then unconfirmed, then inactive; route numbers sort naturally within each group. Grey cards remain available for viewing route details, while the planner uses only eligible active service.
+
+The footer on every view identifies this as **a student-based open source project, for development purposes only**, followed by **Vibe coded with ❤️ by Codex**. It also keeps the independent-service and estimated-time notices.
+
+## Address search and maps
+
+Maps retain **Leaflet + OpenStreetMap tiles**. Address suggestions use the keyless public [Photon demo](https://github.com/komoot/photon#readme), an OpenStreetMap geocoder that supports autocomplete. Stop hints first search the reviewed selected-network directory, supplemented by the existing transit stop-directory APIs; opening the planner does not require a full arrival crawl. Ohio and Georgia stop hints remain separate. A hint is a location, not evidence that buses are currently serving it.
+
+| Request | Exact contract and use |
+| --- | --- |
+| Browser `POST /api/places` | `Content-Type: application/json`; body `{"query":"Tate Student Center","lat":33.948,"lon":-83.377}`. Exactly these three keys; query 3–120 characters with no control characters; finite numeric latitude `[-90,90]`, longitude `[-180,180]`; upload at most 1 KiB; no URL parameters. |
+| Fixed upstream `GET https://photon.komoot.io/api/` | Query `q={encodedQuery}&lat={latitude}&lon={longitude}&limit=5&lang=en`. Coordinates bias relevance toward the selected network; they do not impose a service boundary. Returns GeoJSON `FeatureCollection`, with Point coordinates **`[longitude, latitude]`**. Only valid named/address points become hints. |
+
+```sh
+# Through the local Worker; address text stays out of the browser request URL.
+curl -fsS 'http://localhost:8787/api/places' \
+  -H 'Content-Type: application/json' \
+  --data '{"query":"Tate Student Center","lat":33.948,"lon":-83.377}'
+
+# Same public upstream contract, directly:
+curl -fsS 'https://photon.komoot.io/api/?q=Tate%20Student%20Center&lat=33.948&lon=-83.377&limit=5&lang=en'
+```
+
+The input waits **500 ms**, requires at least three characters for address requests, cancels superseded searches, and rejects stale replies. Two characters can show local stops. An exact local stop match or three or more local stop hits avoids an address request. At most five local and five provider candidates are considered, with eight displayed. A 50-entry, five-minute memory cache avoids repeated lookups in the current tab; queries/addresses are not written to localStorage or the transit snapshot store. Typing sends the query and the network center to Photon after the pause; selecting **My location** does not change that search bias. The Worker forwards no caller credentials, rejects redirects, caps upstream waits at six seconds and responses at 256 KiB, validates the JSON envelope, and returns `no-store` without edge caching. Upstream still receives the search text in its own query URL. The app does not log request bodies. Keyboard navigation, Escape/Tab dismissal and explicit selection keep text and coordinates consistent.
+
+The UI credits Photon and OpenStreetMap. Photon's public demo permits reasonable use, may throttle/ban excessive use and has no availability guarantee; use a managed or self-hosted geocoder before substantial traffic. Local stop hints and map picking remain available during an address-service outage. See [Photon API documentation](https://github.com/komoot/photon/blob/master/docs/api-v1.md). OpenStreetMap's public Nominatim service is not used for autocomplete because its [usage policy forbids it](https://operations.osmfoundation.org/policies/nominatim/).
+
+### Website costs
+
+There is no map API key or paid map SDK in this implementation. As checked on November 13, 2026, [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) lists free unlimited static-asset requests and a free Worker quota of 100,000 requests/day with 10 ms CPU per invocation. Transit/address gateway calls consume Worker requests, including edge-cache hits. Low traffic can fit the free plan; polling, replicated feeds and full network crawls generate multiple calls per visitor. Workers Paid starts at $5/month, with additional usage charges above its allowances. A custom domain and a future managed/self-hosted geocoder may add costs. OSM tiles and Photon remain subject to their provider usage policies, so these limits do not promise free hosting at arbitrary traffic.
 
 ## Run locally
 
@@ -48,7 +95,7 @@ Open Wrangler's URL, normally **http://localhost:8787**. It serves the productio
 3. Add GitHub Actions secrets **`CLOUDFLARE_API_TOKEN`** and **`CLOUDFLARE_ACCOUNT_ID`** to the repository or its `production` environment.
 4. Push to `main`; inspect **Test and deploy to Cloudflare** and the successful Wrangler deployment URL.
 
-CI runs types, deterministic tests, a production build, desktop/mobile browser checks and a Wrangler bundle dry run before the deployment job. Credentials belong in GitHub Actions secrets, never frontend variables or source files. **A production deployment has not been verified in this worktree; the required Cloudflare deployment credentials are not available here.** Build, test and dry-run success do not establish a live URL.
+CI runs types, deterministic tests, a production build, desktop/mobile browser checks and a Wrangler bundle dry run before the deployment job. Credentials belong in GitHub Actions secrets, never frontend variables or source files. The site is hosted at **[tranuga.tobias-seeanner.workers.dev](https://tranuga.tobias-seeanner.workers.dev)**. The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/runs/43353286621) completed both verification and deployment successfully. Check the latest action for the revision currently deployed; build/test/dry-run success alone does not establish publication.
 
 [Deployment instructions](docs/deployment.md) cover account setup, gateway policy, headers, cache behavior, custom domains and rollback. See Cloudflare's [Static Assets](https://developers.cloudflare.com/workers/static-assets/) and [GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/) documentation for the hosting/authentication model.
 
@@ -56,11 +103,13 @@ CI runs types, deterministic tests, a production build, desktop/mobile browser c
 
 Vite produces `dist/` containing HTML, JavaScript, CSS, Leaflet and a self-hosted font. Maps, UI state and the independent journey algorithm run in the browser. The Worker serves a same-origin `/api?url={encodedUpstreamURL}` gateway because UGA/CloudFront omit browser CORS headers and the original agency directory uses HTTP.
 
-The gateway permits the documented **GET** endpoints and narrowly defined **read-only Passio POST** bodies. It is not a general proxy: origins, paths, query keys, methods, system IDs and JSON body fields are validated against committed policy. Caller cookies/credentials are not forwarded, redirects are rejected, and arbitrary hosts, write actions, device registration, feedback and account APIs are excluded. Limits are 12 seconds upstream, 8 MiB response data and 8 KiB POST data. Successful JSON/KML is validated before use. Passio POST cache keys include a digest of the canonical validated body, keeping systems and actions separate.
+The transit gateway permits the documented **GET** endpoints and narrowly defined **read-only Passio POST** bodies. A separate fixed-destination **POST `/api/places`** endpoint supplies address suggestions, as documented above. The transit gateway is not a general proxy: origins, paths, query keys, methods, system IDs and JSON body fields are validated against committed policy. Caller cookies/credentials are not forwarded, redirects are rejected, and arbitrary hosts, write actions, device registration, feedback and account APIs are excluded. Limits are 12 seconds upstream, 8 MiB response data and 8 KiB POST data. Successful JSON/KML is validated before use. Passio POST cache keys include a digest of the canonical validated body, keeping systems and actions separate.
 
 The 73 reviewed InfoPoint roots are in [authorities.json](src/data/authorities.json); runtime discovery cannot grant a new host access. The legacy discovery hop remains HTTP because its HTTPS certificate failed validation during the original probe; TLS verification is never disabled. Browser-to-production requests remain HTTPS.
 
 ## Complete API inventory: 33 patterns
+
+These are the **33 transit patterns**. The additional address-search request is fully specified in [Address search and maps](#address-search-and-maps), for **34 external API patterns in total**.
 
 The original 22 bus-data patterns remain integrated; Passio adds 11 read-query patterns. Calls have actual catalog, map, stop, planning or provider-tool uses. They are selected by feature and network, not all issued at initial page load. No bus API key, login cookie or bearer token is required by the observed contracts. IDs are discovered from responses; the examples below are dated observations, not universal constants.
 
@@ -240,7 +289,7 @@ npx wrangler deploy --dry-run --outdir /tmp/tranuga-worker
 | [replication-service.test.ts](tests/replication-service.test.ts) | Concurrent crawling, schema/storage guards, persistent fallback, bounded retention and nested coordinator health. |
 | [planner.test.ts](tests/planner.test.ts) | Directed journeys, loops, transfers, ETA/EDT, arbitrary/geolocation coordinates, stale/unreachable cases and independent oracle. |
 | [worker.test.ts](tests/worker.test.ts) | Approved GET/POST contracts, payload limits, system separation, origin/method validation, proxy/caching failures and comparison privacy. |
-| [ui.test.ts](tests/ui.test.ts), [browser tests](tests/e2e/app.spec.ts) | Rendering helpers and end-to-end desktop/mobile features, navigation races and failures. |
+| [ui.test.ts](tests/ui.test.ts), [presentation.test.ts](tests/presentation.test.ts), [browser tests](tests/e2e/app.spec.ts) | Rendering helpers, service ordering, note classes, place normalization/cache/privacy and desktop/mobile workflows, selection/race guards and failures. |
 
 Provider probes are opt-in:
 
@@ -249,13 +298,16 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
 ```
 
-The November 13 local acceptance run passed **353 deterministic tests and 40 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
+The November 13 UI refactor acceptance run passed **385 deterministic tests and 50 browser tests**, plus TypeScript, production build and Wrangler dry run. It used an isolated checkout to preserve concurrent planner edits in the shared workspace. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
 
 ## Source map and maintenance
 
 ```text
 src/main.ts                 UI, source status, network/provider tools and polling
 src/map.ts                  Leaflet route, stop, bus and journey layers
+src/places.ts               Stop/address autocomplete and private query transport
+src/notes.ts                Readable note classes, icons and source details
+src/route-presentation.ts   Confirmed service ordering and labels
 src/planner.ts              Browser earliest-arrival estimator
 src/api/                    Original adapters, Passio contracts and transport
 src/replication/             Concurrent source coordinator, merge and snapshot store

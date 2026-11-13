@@ -232,10 +232,37 @@ async function bodyDigest(body: string): Promise<string> {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** A fixed geocoder destination; address text stays out of the browser request URL. */
+async function searchPlaces(request: Request, options: GatewayOptions): Promise<Response> {
+  const url = new URL(request.url);
+  if (request.method !== 'POST') { const response = jsonError(405, 'Use POST for place search'); response.headers.set('Allow', 'POST'); return response; }
+  if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return jsonError(403, 'Cross-origin API requests are not supported');
+  if (url.search || !/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type') || '')) return jsonError(400, 'Send a JSON body without URL parameters');
+  let body: unknown;
+  try { body = JSON.parse(new TextDecoder().decode(await readLimited(request, 1024))); }
+  catch { return jsonError(400, 'Place search requires a JSON body of at most 1 KiB'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return jsonError(400, 'Invalid place search');
+  const value = body as Record<string, unknown>;
+  if (Object.keys(value).sort().join(',') !== 'lat,lon,query' || typeof value.query !== 'string' || value.query.trim().length < 3 || value.query.length > 120 || /[\u0000-\u001f\u007f]/.test(value.query) || typeof value.lat !== 'number' || typeof value.lon !== 'number' || !Number.isFinite(value.lat) || !Number.isFinite(value.lon) || Math.abs(value.lat) > 90 || Math.abs(value.lon) > 180) return jsonError(400, 'Invalid place search');
+  const upstream = new URL('https://photon.komoot.io/api/');
+  upstream.search = new URLSearchParams({ q: value.query.trim(), lat: String(value.lat), lon: String(value.lon), limit: '5', lang: 'en' }).toString();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(options.timeoutMs ?? 6000, 6000));
+  try {
+    const response = await (options.fetcher ?? fetch)(upstream.href, { headers: { Accept: 'application/json' }, redirect: 'manual', signal: controller.signal });
+    if (!response.ok) return jsonError(response.status === 429 ? 429 : 502, 'Address search is temporarily unavailable. Use a stop or the map.');
+    const data = JSON.parse(new TextDecoder().decode(await readLimited(response, Math.min(options.maxBytes ?? 262144, 262144))));
+    if (data?.type !== 'FeatureCollection' || !Array.isArray(data.features)) return jsonError(502, 'Address search returned invalid data');
+    return Response.json(data, { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+  } catch { return jsonError(controller.signal.aborted ? 504 : 502, 'Address search is temporarily unavailable. Use a stop or the map.'); }
+  finally { clearTimeout(timer); }
+}
+
 export function createGateway(options: GatewayOptions = {}) {
   const fetcher = options.fetcher ?? fetch;
   return async (request: Request, env: Env, context?: ExecutionContext): Promise<Response> => {
     const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === '/api/places') return searchPlaces(request, options);
     if (requestUrl.pathname !== '/api' && requestUrl.pathname !== '/api/') {
       if (requestUrl.pathname.startsWith('/api/')) return jsonError(404, 'Unknown API path');
       return env.ASSETS.fetch(request);

@@ -63,6 +63,11 @@ export class TransitService {
     if (!this.topology || version !== this.topologyVersion) { this.topology = ugaTopology(await this.client.get(ugaEndpoints.data, 300000)); this.topologyVersion = version; }
     return this.topology;
   }
+  /** Stop names for search, without crawling arrival predictions. */
+  async getStops(): Promise<Stop[]> {
+    const stops = this.agency.kind === 'uga' ? (await this.staticNetwork()).stops : normalizeStops(await this.client.get(infoEndpoints(this.agency.restUrl!).stops, 300000));
+    return [...new Map([...stops, ...this.cachedStops.values()].map(stop => [stop.id, stop])).values()];
+  }
   async getRoute(routeId: string): Promise<RouteDetail> {
     if (!this.routes.length) await this.listRoutes();
     const route = this.routes.find(r => r.id === routeId); if (!route) throw new Error('This route is not in the current route catalog.');

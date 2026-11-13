@@ -127,3 +127,9 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 ```
 
 Provider comparison coordinates are sent only by an explicit action, are not saved in snapshots or client/edge caches, and are not written into request-log bodies. Provider HTTP rejection, empty responses and missing values remain visible. Local runtime and fixture evidence do not establish continuous availability, an independent physical measurement consensus, or a Cloudflare production deployment.
+
+## Address-search extension — November 13
+
+Maps retain Leaflet/OpenStreetMap. A real local Worker `POST /api/places` with `{"query":"Tate Student Center","lat":33.948,"lon":-83.377}` returned HTTP 200, `Cache-Control: no-store`, and a Photon GeoJSON FeatureCollection of three suggestions; the first was Tate Student Center at longitude/latitude `[-83.3752532,33.9505255]`. Desktop and mobile browser previews showed those results with no JavaScript errors or horizontal overflow. This checked the fixed `https://photon.komoot.io/api/` contract, not the future availability of the demo service.
+
+Worker tests cover method/origin/body/coordinate validation, fixed destination, no-cache behavior, credential stripping, redirect/malformed/oversized rejection, throttling and timeout. Presentation/browser tests cover normalization, memory-cache expiry, local stop/network scope, keyboard selection, coordinate invalidation, swaps and late replies. The [README](../README.md#address-search-and-maps) bundles the exact contract/reproduction requests, public-demo policy and privacy limits. Transit extraction and replication remain the 33 patterns documented above; Photon is one additional address-search pattern.

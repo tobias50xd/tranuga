@@ -1,17 +1,18 @@
 # API inventory and feature map
 
-The shipped app integrates **33 read-query patterns**: the original six UGA/static patterns, three agency-discovery selectors, twelve InfoPoint endpoints and KML, plus eleven Passio patterns. The [README](README.md#complete-api-inventory-33-patterns) contains the complete method/query/body contracts and reproduction commands. This file maps every call to implemented and possible future features; future ideas are not shipped capabilities.
+The shipped app integrates **33 transit read-query patterns** plus **one Photon address-search pattern**: the original six UGA/static patterns, three agency-discovery selectors, twelve InfoPoint endpoints and KML, plus eleven Passio patterns. The [README](README.md#complete-api-inventory-33-patterns) contains the complete transit method/query/body contracts and reproduction commands; its [address-search section](README.md#address-search-and-maps) specifies the additional `/api/places` and fixed Photon upstream contract. This file maps every call to implemented and possible future features; future ideas are not shipped capabilities.
 
 The interface is original. APK visual designs/assets, embedded keys, account APIs, ticket purchasing, ride requests and push/device registration are excluded.
 
 ## Implemented features
 
-- Complete route catalog, search/filter, selected-route road traces and current stops/variants.
+- Complete route catalog with confirmed active service first, lightly tinted active cards, grey unavailable/unconfirmed cards, explicit service labels, search/filter, selected-route road traces and current stops/variants.
 - Reported bus position/heading, original update ages, stale/unknown-age labels and selected-stop arrivals.
-- Arbitrary map or decimal-coordinate endpoints, requested geolocation, endpoint swapping and directed bus journey estimation with walks, waits and transfers.
+- Named stop/place/address autocomplete with keyboard selection, arbitrary map or decimal-coordinate endpoints, requested geolocation, endpoint swapping and directed bus journey estimation with walks, waits and transfers.
 - Combined reviewed Georgia channels, separate Ohio Passio and other InfoPoint networks, explicit ID aliases, three-node Passio comparison, source health and bounded saved fallback.
 - Visible-tab lightweight refresh, explicit full-network synchronization and source/provenance/conflict status.
 - Passio provider name/software version/route groups, explicit bus search, provider timetable clock labels and a separate requested operator transit comparison.
+- Classified travel notes with line icons, plain-language titles, deduplication and expandable source details; student development/open-source and Codex footer attribution.
 - Static production assets, restricted read-only gateway, GitHub Actions verification/deployment workflow and desktop/mobile feature checks.
 
 “Active now” differs from “published in a route catalog.” Publication flags abstain from current-service decisions; a publication-only fallback needs a fresh reported vehicle or a credible nonscheduled arrival with an original update time. Unknown, stale and contradictory topology cannot silently manufacture planning service. See [replication.md](docs/replication.md).
@@ -107,10 +108,13 @@ Passio local clock-only bus timestamps do not prove an absolute GPS measurement 
 | Public messages | Client 1 min. | 10 s. |
 | Passio provider information/version/groups | Identity/version 1 h; groups 5 min. | 1 h. |
 | Passio timetable | Client 1 min. | 1 h. |
+| Photon address search | 500 ms pause; 3–120 characters; skip exact local stop matches or at least three local stop hints; abort superseded queries; 50-entry, 5-minute tab-memory cache. JSON POST to `/api/places`; fixed upstream GET `/api/?q=…&lat=…&lon=…&limit=5&lang=en`. | `no-store`; no saved snapshots. |
 | Operator comparison | Explicit action; no client/edge cache or saved snapshot; coordinate bodies are not written to the request log. | `no-store`. |
 | Last-good normalized snapshots | At most 64 slots, 2,000,000-character persistence cap and 24 h static age. Cached active flags/predictions: 2 min eligibility; cached vehicle display: at most 5 min. | Browser storage, not edge state. |
 
-Identical requests coalesce. Browser timeout is 15 s; gateway upstream timeout is 12 s, response limit 8 MiB and validated POST body limit 8 KiB. Cache/body keys preserve system/action separation. Storage/schema failures do not convert corrupt data into valid fallback. `snapshotAt` and original measurement/update times are preserved through nested coordinators. There is no closed-browser/server cron crawler.
+Address queries use a separate six-second/256 KiB upstream cap and 1 KiB POST cap. Maps retain Leaflet/OpenStreetMap, and the selected network supplies the address-search bias. See the README for Photon usage policy, privacy, costs and note classes.
+
+Identical transit requests coalesce. Browser timeout is 15 s; gateway upstream timeout is 12 s, response limit 8 MiB and validated POST body limit 8 KiB. Cache/body keys preserve system/action separation. Storage/schema failures do not convert corrupt data into valid fallback. `snapshotAt` and original measurement/update times are preserved through nested coordinators. There is no closed-browser/server cron crawler.
 
 The full source/replica rules and tolerances are in [replication.md](docs/replication.md). The reviewed Georgia aliases cover at most two overlapping channels per route; unrelated InfoPoint agencies and Ohio never become extra Georgia votes.
 

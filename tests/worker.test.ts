@@ -433,3 +433,50 @@ describe('edge gateway', () => {
     expect(result.status).toBe(200);
   });
 });
+
+describe('private fixed-destination address search', () => {
+  const body = { query: 'Tate Student Center', lat: 33.948, lon: -83.377 };
+  const places = (value: unknown = body, init: RequestInit = {}) => new Request('https://tranuga.example/api/places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), ...init });
+  it('uses the fixed Photon endpoint, validates JSON and never caches address requests', async () => {
+    const cache = { match: vi.fn(), put: vi.fn() };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ type: 'FeatureCollection', features: [] }, { headers: { 'Set-Cookie': 'private=x' } }));
+    const result = await createGateway({ fetcher, cache })(places(), env);
+    expect(result.status).toBe(200); expect(result.headers.get('Cache-Control')).toBe('no-store'); expect(result.headers.get('Set-Cookie')).toBeNull();
+    const [url, options] = fetcher.mock.calls[0]; const upstream = new URL(String(url));
+    expect(upstream.origin).toBe('https://photon.komoot.io'); expect(upstream.pathname).toBe('/api/');
+    expect(Object.fromEntries(upstream.searchParams)).toEqual({ q: body.query, lat: String(body.lat), lon: String(body.lon), limit: '5', lang: 'en' });
+    expect(options?.redirect).toBe('manual'); expect(options?.headers).toEqual({ Accept: 'application/json' });
+    expect(cache.match).not.toHaveBeenCalled(); expect(cache.put).not.toHaveBeenCalled();
+    expect(validateUpstream(upstream.href)).toBeUndefined();
+  });
+  it.each([null, [], {}, { ...body, url: 'http://localhost' }, { ...body, query: 'aa' }, { ...body, query: 'x'.repeat(121) }, { ...body, query: 'a\nbc' }, { ...body, lat: 91 }, { ...body, lon: -181 }, { ...body, lat: '33.9' }])('rejects invalid address body %j before contacting a provider', async value => {
+    const fetcher = vi.fn<typeof fetch>(); const response = await createGateway({ fetcher })(places(value), env);
+    expect(response.status).toBe(400); expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('rejects cross-origin, URL parameters, unsupported methods, oversized and malformed uploads', async () => {
+    const fetcher = vi.fn<typeof fetch>(), gateway = createGateway({ fetcher });
+    const requests = [
+      [places(body, { headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' } }), 403],
+      [new Request('https://tranuga.example/api/places?q=Tate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), 400],
+      [new Request('https://tranuga.example/api/places'), 405],
+      [places(body, { body: 'x'.repeat(1025) }), 400],
+      [places(body, { body: '{' }), 400],
+      [places(body, { headers: { 'Content-Type': 'text/plain' } }), 400],
+    ] as const;
+    for (const [request, status] of requests) expect((await gateway(request, env)).status).toBe(status);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each([
+    new Response(null, { status: 302, headers: { Location: 'https://evil.example/' } }),
+    new Response('Not JSON'), Response.json({ error: true }), Response.json({ type: 'FeatureCollection', features: 'invalid' }),
+    new Response('x'.repeat(100)),
+  ])('contains provider failures and rejects unexpected or oversized responses', async upstream => {
+    const result = await createGateway({ fetcher: vi.fn<typeof fetch>().mockResolvedValue(upstream), maxBytes: 80 })(places(), env);
+    expect(result.status).toBe(502); expect(result.headers.get('Cache-Control')).toBe('no-store');
+  });
+  it('exposes throttling and bounds the upstream wait', async () => {
+    expect((await createGateway({ fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 429 })) })(places(), env)).status).toBe(429);
+    const fetcher: typeof fetch = async (_url, options) => new Promise((_resolve, reject) => { options?.signal?.addEventListener('abort', () => reject(new Error('Aborted'))); });
+    expect((await createGateway({ fetcher, timeoutMs: 5 })(places(), env)).status).toBe(504);
+  });
+});

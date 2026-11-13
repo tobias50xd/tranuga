@@ -7,6 +7,7 @@ import { SnapshotStore } from './store';
 export interface TransitProvider {
   readonly client: ApiClient;
   listRoutes(): Promise<Route[]>;
+  getStops?(): Promise<Stop[]>;
   getRoute(id: string): Promise<RouteDetail>;
   getStop(id: string): Promise<StopDetail>;
   getNetwork(): Promise<Network>;
@@ -102,6 +103,7 @@ export class ReplicatedTransitService implements TransitProvider {
           if (network) {
             let recovered: unknown;
             if (operation === 'routes') recovered = network.value.routes;
+            if (operation === 'stops') recovered = network.value.stops;
             if (operation === 'vehicles') recovered = network.value.vehicles;
             if (operation === 'messages') recovered = network.value.messages;
             if (operation.startsWith('route:')) {
@@ -151,6 +153,13 @@ export class ReplicatedTransitService implements TransitProvider {
       const input = await this.collect('routes', source => source.service.listRoutes(), (value): value is Route[] => arrayOf(value, isRoute));
       input.forEach(value => this.catalog.set(value.source.id, new Set(value.value.map(route => route.id))));
       const session = this.session(), routes = session.routes(input); this.finish(session); return routes;
+    });
+  }
+  async getStops(): Promise<Stop[]> {
+    return this.run('stops', async () => {
+      const input = await this.collect('stops', source => source.service.getStops!(), (value): value is Stop[] => arrayOf(value, isStop), this.sources.filter(source => source.service.getStops));
+      input.forEach(value => this.stopDirectory.set(value.source.id, new Set(value.value.map(stop => stop.id))));
+      const session = this.session(), stops = session.stops(input); this.finish(session); return stops;
     });
   }
   async getRoute(id: string): Promise<RouteDetail> {

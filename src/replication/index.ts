@@ -1,7 +1,7 @@
 import crosswalk from '../data/athens-crosswalk.json';
 import { ApiClient, TransitService, UGA_AGENCY } from '../api';
 import { PassioService, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY, PASSIO_ORIGINS } from '../api/passio';
-import type { Agency } from '../types';
+import type { Agency, Stop } from '../types';
 import { ReplicatedTransitService } from './service';
 import { SnapshotStore, type StorageLike } from './store';
 import type { Crosswalk } from './merge';
@@ -11,6 +11,10 @@ export type { ReplicationReport, SourceHealth } from './service';
 export { PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from '../api/passio';
 export const ATHENS_INFO_AGENCY: Agency = { id: '58', name: 'Athens-Clarke County · Georgia', kind: 'infopoint', restUrl: 'https://bustracker.accgov.com/InfoPoint/rest', center: { lat: 33.96, lon: -83.38 } };
 export const GEORGIA_AGENCY: Agency = { ...UGA_AGENCY, name: 'UGA + Athens · Georgia' };
+/** Reviewed stop names remain searchable even while live directories are unavailable. */
+export function knownStops(agency: Agency): Stop[] {
+  return crosswalk.stops.filter(stop => agency.kind === 'uga' || agency.kind === 'passio' && agency.id === '3994' && stop.operator === 'uga-campus' || agency.kind === 'infopoint' && agency.id === '58' && stop.operator === 'athens-ga').map(stop => ({ id: stop.id, name: stop.name, lat: stop.lat, lon: stop.lon }));
+}
 function browserStorage(): StorageLike | undefined { try { return globalThis.localStorage; } catch { return undefined; } }
 
 /** Ohio and Georgia always use different coordinator scopes and storage keys. */

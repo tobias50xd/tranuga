@@ -1,8 +1,21 @@
 # Acceptance evidence
 
-The November 13 local acceptance run passed **353 deterministic tests and 40 production-build desktop/mobile browser tests**, including TypeScript and the production build through `npm run check`. A final Wrangler bundle dry run passed. Production publication remains a separate external gate.
+The November 13 UI refactor acceptance run passed **385 deterministic tests and 50 production-build desktop/mobile browser tests**, including TypeScript and the production build through `npm run check`. The checkout isolated this change from concurrent planner edits in the shared workspace. A final Wrangler bundle dry run passed. Production publication remains a separate external gate.
 
-A production Cloudflare deployment remains an external gate: the workflow is present, but no production deployment URL has been verified and the required deployment credentials are unavailable in the current environment.
+The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/runs/43353286621) completed verification and deployment successfully, publishing [tranuga.tobias-seeanner.workers.dev](https://tranuga.tobias-seeanner.workers.dev). Inspect the latest action for publication of subsequent revisions; local validation alone is not a deployment result.
+
+## UI refactor evidence — November 13
+
+- Kept Leaflet/OpenStreetMap; no map-key or Google Maps dependency was added.
+- Confirmed active routes sort first and have a light tint. Grey unavailable/unconfirmed cards retain status text and remain inspectable.
+- Named stop and Photon address hints support pointer/keyboard selection, swaps and map/geolocation points; editing clears old selected coordinates. Browser cases cover stale/cancelled replies and navigation cleanup.
+- Notes have nine documented icon/classes, plain-language summaries and escaped original source details. Operator messages remain verbatim plain text; action errors have accessible alerts.
+- Both desktop and mobile show the student open-source/development notice and “Vibe coded with ❤️ by Codex” on all views. Map instruction placement is checked inside the map on both layouts.
+- `npm run check`: **385 deterministic tests passed**, eight opt-in live cases skipped, **50 browser tests passed**. TypeScript, production build and Wrangler bundle dry run passed.
+- A real local edge POST `/api/places` for Tate Student Center returned HTTP 200, a FeatureCollection with three candidates, first coordinates `[-83.3752532,33.9505255]`, and `Cache-Control: no-store`. The desktop/mobile browser preview displayed those live suggestions with OSM tiles, both footer notices, no JavaScript errors and no horizontal overflow. This is a scoped observation, not provider uptime evidence.
+- README bundles all 33 transit patterns plus the separate Photon pattern, method/body/query examples, limits/privacy, note classes and current cost links.
+
+The table below preserves the earlier transit-extension acceptance evidence; the UI refactor counts above supersede its suite totals.
 
 ## Current extension gates
 

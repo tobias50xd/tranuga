@@ -228,6 +228,7 @@ export class PassioService {
     this.topology = normalizePassioTopology(await this.client.post(this.endpoints.topology, this.endpoints.systemPayload, 300000), this.agency.id);
     return this.topology;
   }
+  async getStops(): Promise<Stop[]> { return (await this.loadTopology()).stops; }
   async refreshVehicles(): Promise<Vehicle[]> {
     if (this.agency.id === '3994' && !this.variantRoutes.size) await this.listRoutes();
     return normalizePassioVehicles(await this.client.post(this.endpoints.buses, this.endpoints.systemPayload, 10000), this.agency.id).map(vehicle => ({ ...vehicle, routeId: this.variantRoutes.get(vehicle.routeId) ?? vehicle.routeId }));
@@ -271,12 +272,14 @@ export class PassioService {
       this.refreshVehicles().catch(error => { warnings.push(`Passio vehicles unavailable: ${failure(error)}`); return []; }),
       this.getMessages().catch(error => { warnings.push(`Passio messages unavailable: ${failure(error)}`); return []; }),
     ]);
-    const activeIds = new Set(routes.filter(route => route.active).map(route => route.id));
-    const patterns = topology.patterns.filter(pattern => activeIds.has(pattern.routeId)), stops = uniqueStops(patterns);
+    // Topology is one agency-wide response, so retain every returned route and
+    // let current vehicle/ETA evidence decide which lines are usable.
+    const routeIds = new Set(routes.map(route => route.id));
+    const patterns = topology.patterns.filter(pattern => routeIds.has(pattern.routeId)), stops = uniqueStops(patterns);
     const predicted = await this.predictions(stops.map(stop => stop.id));
-    const missing = routes.filter(route => route.active && !patterns.some(pattern => pattern.routeId === route.id));
+    const missing = routes.filter(route => !patterns.some(pattern => pattern.routeId === route.id));
     if (missing.length) warnings.push(`Ordered stops unavailable for ${missing.map(route => route.shortName).join(', ')}; these routes are excluded from planning.`);
     if (vehicles.some(vehicle => !vehicle.updatedAt)) warnings.push('Passio vehicle update dates are unavailable; marker freshness is unknown.');
-    return { agencyId: this.agency.id, routes, patterns, stops, vehicles, departures: predicted.departures.filter(departure => activeIds.has(departure.routeId)), messages, warnings: [...warnings, ...predicted.warnings], updatedAt: Date.now() };
+    return { agencyId: this.agency.id, routes, patterns, stops, vehicles, departures: predicted.departures.filter(departure => routeIds.has(departure.routeId)), messages, warnings: [...warnings, ...predicted.warnings], updatedAt: Date.now() };
   }
 }

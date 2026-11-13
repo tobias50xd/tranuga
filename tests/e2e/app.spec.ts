@@ -15,6 +15,7 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
   data.ugaTracking.forEach((stop, i) => { stop.times = [Date.now() + 300000 + i * 60000]; });
   data.ugaStop.forEach(stop => { stop.times = [Date.now() + 180000]; });
   await page.route('https://tile.openstreetmap.org/**', route => route.abort());
+  await page.route('**/api/places', route => route.fulfill({ status: 503, json: { error: 'Address search unavailable in this fixture' } }));
   await page.route('**/api?url=*', async route => {
     const url = new URL(route.request().url()).searchParams.get('url')!;
     calls.push(url); const path = new URL(url).pathname;
@@ -77,6 +78,9 @@ test('first page lists every route, searches, filters and refreshes', async ({ p
   await page.goto('/');
   await expect(page.locator('.route-card')).toHaveCount(2);
   await expect(page.locator('#route-count')).toContainText('2 routes · 1 active');
+  await expect(page.locator('.route-card').first()).toHaveClass(/route-active/);
+  await expect(page.locator('.route-card').last()).toHaveClass(/route-inactive|route-unconfirmed/);
+  expect(await page.locator('.route-card').first().evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(await page.locator('.route-card').last().evaluate(el => getComputedStyle(el).backgroundColor));
   await page.getByLabel('Search routes').fill('night');
   await expect(page.locator('.route-card')).toHaveCount(1);
   await page.getByLabel('Search routes').fill('');
@@ -135,8 +139,8 @@ test('plans a real directed bus connection between arbitrary coordinates', async
   await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
   const stops = data.ugaTracking;
   const from = stops[0].stop, to = stops[8].stop;
-  await page.getByRole('textbox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
-  await page.getByRole('textbox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
+  await page.getByRole('combobox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
+  await page.getByRole('combobox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.locator('.trip-summary')).toContainText('QUICKEST ESTIMATED CONNECTION');
   await expect(page.locator('.journey-leg.ride')).not.toHaveCount(0);
@@ -146,11 +150,13 @@ test('plans a real directed bus connection between arbitrary coordinates', async
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('map picking and swapping fill both coordinate fields', async ({ page }) => {
+test('map picking and swapping preserve named points', async ({ page }) => {
   await mockTransit(page); await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
   await page.locator('#pick-origin').click();
   await page.locator('#trip-map').click({ position: { x: 110, y: 150 } });
   await expect(page.locator('#trip-origin')).not.toHaveValue('');
+  const hint = await page.locator('#map-instruction').boundingBox(), mapBounds = await page.locator('#trip-map').boundingBox();
+  expect(hint!.y).toBeGreaterThanOrEqual(mapBounds!.y); expect(hint!.y + hint!.height).toBeLessThanOrEqual(mapBounds!.y + mapBounds!.height);
   await page.locator('#pick-destination').click();
   await page.locator('#trip-map').click({ position: { x: 180, y: 240 } });
   const from = await page.locator('#trip-origin').inputValue();
@@ -165,7 +171,7 @@ test('uses browser geolocation and reports denial with recovery', async ({ page,
   await context.grantPermissions(['geolocation']); await context.setGeolocation({ latitude: 33.948, longitude: -83.377 });
   await mockTransit(page); await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
   await page.getByRole('button', { name: 'My location' }).click();
-  await expect(page.locator('#trip-origin')).toHaveValue('33.94800, -83.37700');
+  await expect(page.locator('#trip-origin')).toHaveValue('Current location');
   await page.evaluate(() => { navigator.geolocation.getCurrentPosition = (_ok, fail) => fail?.({ code: 1 } as GeolocationPositionError); });
   await page.getByRole('button', { name: 'My location' }).click();
   await expect(page.getByRole('alert')).toContainText('permission was denied');
@@ -173,10 +179,10 @@ test('uses browser geolocation and reports denial with recovery', async ({ page,
 
 test('validates coordinates and reports unreachable destinations', async ({ page }) => {
   await mockTransit(page); await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
-  await page.getByRole('textbox', { name: 'Start', exact: true }).fill('bad'); await page.getByRole('textbox', { name: 'Destination', exact: true }).fill('0,0');
+  await page.getByRole('combobox', { name: 'Start', exact: true }).fill('bad'); await page.getByRole('combobox', { name: 'Destination', exact: true }).fill('0,0');
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
-  await expect(page.getByRole('alert')).toContainText('valid latitude');
-  await page.getByRole('textbox', { name: 'Start', exact: true }).fill('0,0');
+  await expect(page.getByRole('alert')).toContainText('Choose a start and destination');
+  await page.getByRole('combobox', { name: 'Start', exact: true }).fill('0,0');
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.locator('#trip-result')).toContainText('No bus connection found');
 });
@@ -186,7 +192,7 @@ test('failed live topology is excluded from planning and static map fallback is 
   await page.goto('/'); await page.locator('[data-route="5750"]').click();
   await expect(page.locator('#route-warnings')).toContainText('Showing static stops');
   await page.locator('nav [data-nav="plan"]').click();
-  await page.getByRole('textbox', { name: 'Start', exact: true }).fill('33.948,-83.377'); await page.getByRole('textbox', { name: 'Destination', exact: true }).fill('33.95,-83.38');
+  await page.getByRole('combobox', { name: 'Start', exact: true }).fill('33.948,-83.377'); await page.getByRole('combobox', { name: 'Destination', exact: true }).fill('33.95,-83.38');
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.locator('#trip-status')).toContainText('excluded from planning');
   await expect(page.locator('#trip-result')).toContainText('No bus connection found');
@@ -223,8 +229,8 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   });
   await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
   const from = data.ugaTracking[0].stop, to = data.ugaTracking[8].stop;
-  await page.getByRole('textbox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
-  await page.getByRole('textbox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
+  await page.getByRole('combobox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
+  await page.getByRole('combobox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.locator('#trip-origin')).toBeDisabled();
   await expect(page.locator('#swap')).toBeDisabled();
@@ -297,8 +303,8 @@ test('Passio data supports Georgia trips when the UGA catalog is unavailable', a
   await mockTransit(page,{passio:true,failRoutes:true});await page.goto('/');
   await expect(page.locator('[data-route="5750"]')).toBeVisible();
   await page.locator('nav [data-nav="plan"]').click();
-  await page.getByRole('textbox',{name:'Start',exact:true}).fill('33.932505,-83.371494');
-  await page.getByRole('textbox',{name:'Destination',exact:true}).fill('33.95458,-83.376482');
+  await page.getByRole('combobox',{name:'Start',exact:true}).fill('33.932505,-83.371494');
+  await page.getByRole('combobox',{name:'Destination',exact:true}).fill('33.95458,-83.376482');
   await page.getByRole('button',{name:'Find quickest bus trip'}).click();
   await expect(page.locator('.trip-summary')).toBeVisible();
   await expect(page.locator('.journey-leg.ride')).not.toHaveCount(0);
@@ -317,8 +323,8 @@ test('provider metadata, fleet search, timetable and explicit trip comparison us
   await page.locator('.stop-list button').first().click();await page.getByRole('button',{name:'Provider timetable',exact:true}).click();
   await expect(page.locator('#stop-timetable')).toContainText('Provider clock times');
   await page.locator('nav [data-nav="plan"]').click();
-  await page.getByRole('textbox',{name:'Start',exact:true}).fill('39.29566789,-82.11205432');
-  await page.getByRole('textbox',{name:'Destination',exact:true}).fill('39.325428,-82.101967');
+  await page.getByRole('combobox',{name:'Start',exact:true}).fill('39.29566789,-82.11205432');
+  await page.getByRole('combobox',{name:'Destination',exact:true}).fill('39.325428,-82.101967');
   expect(calls.some(url=>url.includes('walk=2'))).toBe(false);
   await page.locator('.operator-comparison summary').click();await page.getByRole('button',{name:'Request provider comparison'}).click();
   await expect(page.locator('#operator-result article')).not.toHaveCount(0);
@@ -331,10 +337,89 @@ test('a delayed provider suggestion cannot replace results after endpoints chang
   await mockTransit(page,{passio:true});let release!:()=>void;const waiting=new Promise<void>(resolve=>{release=resolve;});
   await page.route('**/api?url=*',async route=>{if(new URL(route.request().url()).searchParams.get('url')?.includes('walk=2'))await waiting;await route.fallback();});
   await page.goto('/');await page.locator('nav [data-nav="plan"]').click();
-  await page.getByRole('textbox',{name:'Start',exact:true}).fill('33.94,-83.37');await page.getByRole('textbox',{name:'Destination',exact:true}).fill('33.95,-83.38');
+  await page.getByRole('combobox',{name:'Start',exact:true}).fill('33.94,-83.37');await page.getByRole('combobox',{name:'Destination',exact:true}).fill('33.95,-83.38');
   await page.locator('.operator-comparison summary').click();await page.getByRole('button',{name:'Request provider comparison'}).click();
   await expect(page.getByRole('button',{name:'Request provider comparison'})).toBeDisabled();
-  await page.getByRole('textbox',{name:'Destination',exact:true}).fill('33.96,-83.39');release();
+  await page.getByRole('combobox',{name:'Destination',exact:true}).fill('33.96,-83.39');release();
   await expect(page.getByRole('button',{name:'Request provider comparison'})).toBeEnabled();
   await expect(page.locator('#operator-result')).toBeEmpty();
+});
+
+test('footer identifies the student development project and Codex across views', async ({ page }) => {
+  await mockTransit(page); await page.goto('/');
+  await expect(page.locator('footer')).toContainText('A student-based open source project, for development purposes only.');
+  await expect(page.locator('footer')).toContainText('Vibe coded with ❤️ by Codex');
+  await page.locator('nav [data-nav="plan"]').click();
+  await expect(page.locator('footer')).toContainText('Vibe coded with ❤️ by Codex');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('stop-name suggestions support the keyboard and produce a bus trip without geocoding', async ({ page }) => {
+  const { data } = await mockTransit(page);
+  const queries: string[] = [];
+  await page.route('**/api/places', async route => { queries.push(route.request().postDataJSON().query); await route.fulfill({ json: { type: 'FeatureCollection', features: [] } }); });
+  await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
+  const from = data.ugaTracking[0].stop, to = data.ugaTracking[8].stop;
+  const start = page.getByRole('combobox', { name: 'Start', exact: true });
+  const end = page.getByRole('combobox', { name: 'Destination', exact: true });
+  await start.fill(from.name);
+  await page.locator('#trip-origin-hints').getByRole('option').filter({ hasText: from.name }).first().click();
+  await end.fill(to.name);
+  await expect(page.locator('#trip-destination-hints').getByRole('option').first()).toContainText(to.name);
+  await end.press('ArrowDown'); await expect(end).toHaveAttribute('aria-activedescendant', /option-0$/);
+  await end.press('Enter'); await expect(end).toHaveAttribute('aria-expanded', 'false');
+  await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
+  await expect(page.locator('.trip-summary')).toBeVisible();
+  expect(queries).toEqual([]);
+});
+
+test('address suggestions use POST, selection preserves coordinates through swaps and edits clear stale points', async ({ page }) => {
+  const { data } = await mockTransit(page); const bodies: Record<string, unknown>[] = [];
+  await page.route('**/api/places', async route => {
+    const body = route.request().postDataJSON(); bodies.push(body);
+    expect(route.request().method()).toBe('POST'); expect(new URL(route.request().url()).search).toBe('');
+    const stop = data.ugaTracking[body.query === 'Alpha address' ? 0 : 8].stop;
+    await route.fulfill({ json: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [stop.longitude, stop.latitude] }, properties: { name: body.query, city: 'Athens', state: 'Georgia' } }] } });
+  });
+  await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
+  const start = page.getByRole('combobox', { name: 'Start', exact: true }), end = page.getByRole('combobox', { name: 'Destination', exact: true });
+  await start.fill('Zz'); await expect(start).toHaveAttribute('aria-expanded', 'false'); expect(bodies).toEqual([]);
+  await start.fill('Alpha address'); await expect(page.locator('#trip-origin-hints')).toContainText('Alpha address');
+  await start.press('ArrowDown'); await start.press('Enter');
+  await end.fill('Beta address'); await page.locator('#trip-destination-hints').getByRole('option').click();
+  await page.getByRole('button', { name: 'Swap' }).click(); await expect(start).toHaveValue('Beta address'); await expect(end).toHaveValue('Alpha address');
+  await page.getByRole('button', { name: 'Swap' }).click();
+  await page.getByRole('button', { name: 'Find quickest bus trip' }).click(); await expect(page.locator('.trip-summary')).toBeVisible();
+  await start.fill('Unselected text'); await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
+  await expect(page.locator('#trip-status')).toContainText('Choose a start and destination');
+  await expect(page.locator('.trip-summary')).toHaveCount(0);
+  expect(bodies.length).toBe(2); expect(bodies[0]).toMatchObject({ query: 'Alpha address', lat: 33.948, lon: -83.377 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('late address responses cannot overwrite new hints or a removed planner', async ({ page }) => {
+  await mockTransit(page);
+  let release!: () => void; const waiting = new Promise<void>(resolve => { release = resolve; }); const calls: string[] = [];
+  await page.route('**/api/places', async route => {
+    const query = route.request().postDataJSON().query; calls.push(query);
+    if (query === 'Older address') await waiting;
+    await route.fulfill({ json: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-83.377, 33.948] }, properties: { name: query } }] } });
+  });
+  await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
+  const start = page.getByRole('combobox', { name: 'Start', exact: true });
+  await start.fill('Older address'); await expect.poll(() => calls.includes('Older address')).toBe(true);
+  await start.fill('Newer address'); await expect(page.locator('#trip-origin-hints')).toContainText('Newer address');
+  release(); await expect(page.locator('#trip-origin-hints')).not.toContainText('Older address');
+  await start.press('Escape'); await expect(start).toHaveAttribute('aria-expanded', 'false');
+  await start.fill('Another address'); await page.locator('nav [data-nav="routes"]').click();
+  await expect(page.locator('.route-card')).toHaveCount(2);
+});
+
+test('travel notes expose useful categories and preserve original warnings in source details', async ({ page }) => {
+  await mockTransit(page, { staleVehicles: true }); await page.goto('/'); await page.locator('[data-route="5750"]').click();
+  const freshness = page.locator('#route-warnings [data-note-kind="freshness"]');
+  await expect(freshness.getByRole('heading')).toHaveText('Check the update time');
+  await expect(freshness.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+  await freshness.getByText('Source details', { exact: true }).click();
+  await expect(freshness.locator('details')).toContainText('older than two minutes');
 });

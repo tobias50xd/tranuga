@@ -131,3 +131,18 @@ describe('read-only POST transport',()=>{
     expect(fetcher.mock.calls[0][1]).toMatchObject({method:'POST',credentials:'omit',headers:{'Content-Type':'application/json'}});
   });
 });
+
+describe('stop search directories', () => {
+  it('merges comparable stop directories without a prediction crawl and recovers a saved network directory', async () => {
+    const sources = [provider(), provider(), provider()];
+    sources.forEach(source => { source.getStops = vi.fn(async () => structuredClone(network.stops)); });
+    const storage = memory(), store = new SnapshotStore(storage, () => now), service = replicated(sources, store);
+    const stops = await service.getStops();
+    expect(stops).toHaveLength(2); expect(stops[0].agreement).toBe('corroborated');
+    sources.forEach(source => { expect(source.getStops).toHaveBeenCalledTimes(1); expect(source.getNetwork).not.toHaveBeenCalled(); });
+    await service.getNetwork();
+    const offline = provider(); offline.getStops = fail;
+    const restored = replicated([offline], new SnapshotStore(storage, () => now));
+    expect(await restored.getStops()).toHaveLength(2); expect(restored.report.sources[0].state).toBe('cached');
+  });
+});
