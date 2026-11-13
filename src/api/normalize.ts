@@ -33,7 +33,7 @@ export function color(value: unknown): string {
 export function normalizeRoutes(value: unknown, agencyId: string, kind: 'uga' | 'infopoint'): Route[] {
   return rows(value, 'Route list').flatMap(row => {
     const id = text(kind === 'uga' ? row.id : row.RouteId); if (!id) return [];
-    return [{ id, agencyId, name: text(row.long_name ?? row.LongName ?? row.Description, `Route ${id}`), shortName: text(row.short_name ?? row.ShortName ?? row.RouteAbbreviation, id), color: color(row.color ?? row.Color ?? row.hex), active: kind === 'uga' ? row.active === true : row.IsVisible !== false, availability: kind === 'uga' ? 'current' : 'published' }];
+    return [{ id, agencyId, operator: kind === 'uga' ? row.isAthensBus === true ? 'city' : 'uga' : agencyId === '58' ? 'city' : 'other', name: text(row.long_name ?? row.LongName ?? row.Description, `Route ${id}`), shortName: text(row.short_name ?? row.ShortName ?? row.RouteAbbreviation, id), color: color(row.color ?? row.Color ?? row.hex), active: kind === 'uga' ? row.active === true : row.IsVisible !== false, availability: kind === 'uga' ? 'current' : 'published' }];
   });
 }
 export function normalizeStops(value: unknown): Stop[] {

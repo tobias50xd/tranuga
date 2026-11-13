@@ -101,3 +101,40 @@ nav .menu-toggle:hover{border-color:#879a7e}
 :root[data-theme=dark] .leaflet-tooltip-bottom:before{border-bottom-color:var(--paper)}
 :root[data-theme=dark] .leaflet-tooltip-left:before{border-left-color:var(--paper)}
 :root[data-theme=dark] .leaflet-tooltip-right:before{border-right-color:var(--paper)}
+
+
+/* Bus-line favorites are independent controls, never nested inside the route button. */
+.route-card{cursor:default}
+.route-open{display:block;width:100%;padding:0;text-align:left}
+.route-open:after{content:'';position:absolute;inset:0;z-index:0}
+.route-card .card-top{padding-right:35px}
+.favorite-button{position:absolute;top:15px;right:12px;z-index:1;width:32px;height:32px;display:grid;place-items:center;border-radius:5px;color:#716e5d}
+.favorite-button svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none}
+.favorite-button[aria-pressed=true]{color:#87620a;background:#fff0ba}
+.favorite-button[aria-pressed=true] svg{fill:currentColor}
+.favorite-button:hover{background:#e8e7da}
+.operator-label{display:block;margin-top:5px;font-size:.65rem;font-weight:650;letter-spacing:.04em;color:var(--muted)}
+:root[data-theme=dark] .favorite-button{color:#bdc7b7}
+:root[data-theme=dark] .favorite-button[aria-pressed=true]{color:#f4cf75;background:#493d20}
+:root[data-theme=dark] .favorite-button:hover{background:#3f4936}
+.notes-dropdown{margin:12px 0;border:1px solid var(--line);border-radius:6px;padding:10px 13px;background:var(--paper);font-size:.78rem}
+.notes-dropdown>summary{cursor:pointer;font-weight:650}
+.note-peek{display:inline;margin-left:12px;font-size:.7rem;font-weight:400;color:var(--muted)}
+.notes-dropdown .notes{margin:12px 0 0}.notes-dropdown .note{padding:11px 13px;font-size:.76rem}
+.notes-dropdown .note h3{font-size:.78rem}.notes-dropdown .note-details{font-size:.7rem}
+.route-notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px;margin-top:9px}
+.route-notes>div:empty{display:none}
+#trip-notes{margin-top:15px}#trip-notes:empty{display:none}
+.calculation-progress{height:5px;margin:8px 0 0;overflow:hidden;border-radius:3px;background:var(--line)}
+.calculation-progress>span{display:block;width:35%;height:100%;background:var(--red);animation:route-progress 1.1s ease-in-out infinite}
+@keyframes route-progress{from{transform:translateX(-110%)}to{transform:translateX(400%)}}
+.transfer-marker>span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#7940be;color:white;font-size:22px;font-weight:750;box-shadow:0 1px 7px #0005;position:relative}
+.transfer-marker small{position:absolute;right:-7px;bottom:-5px;display:grid;place-items:center;background:#5b258e;color:#fff;border:1px solid white;border-radius:50%;width:17px;height:17px;font-size:10px}
+.transfer-hint{display:block!important;color:#7940be!important;font-size:.75rem!important;font-weight:700;margin-bottom:6px}
+.map-caption .transfer-key{color:#7940be;font-weight:650}
+:root[data-theme=dark] .transfer-hint,:root[data-theme=dark] .map-caption .transfer-key{color:#d5adff!important}
+.journey-legend{font-size:.65rem;gap:13px}
+.assumptions ul{padding-left:18px}.assumptions li{margin-top:7px}
+@media(max-width:680px){.route-notes{grid-template-columns:1fr;gap:0}.favorite-button{top:11px;right:10px}.note-peek{display:block;margin:3px 0 0 15px}.journey-legend{font-size:.6rem;gap:10px}}
+@media(prefers-reduced-motion:reduce){.calculation-progress>span{animation:none;transform:translateX(90%)}}
+.button .calculation-label{font-size:inherit}

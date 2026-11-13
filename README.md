@@ -5,13 +5,19 @@ A static bus explorer and quickest-trip estimator, deployed with GitHub Actions 
 ## Use the app
 
 - **Main menu:** switch **Dark mode** on/off and use **Athens lock**, which is on by default. Both settings are remembered on this device.
-- **Routes:** browse every returned route with active service first and a light green tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
-- **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Every bus line used is listed with its direction and reported bus count; its supplied route trace and current bus markers are drawn on the result map.
+- **Routes:** star bus-line cards to pin favorites first, followed by UGA routes, then city routes. Active service has a light tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
+- **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Calculation shows an indeterminate loading bar. The result map draws only the ridden portions of the selected lines, marks transfer stops with a purple ↔ symbol, and refreshes their bus markers. Notes stay collapsed below the map.
 - **Data reliability:** inspect responding sources, disagreements and saved-backup state. **Sync all sources** crawls the selected network's full route/stop/prediction data. One responding source can provide a labeled fallback; compatible reports from two replicas take precedence over an outlier.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
 - **Networks:** Athens lock offers the combined Georgia network, UGA's Passio network and Athens-Clarke County InfoPoint. Turn the lock off to use Athens Public Transit in Ohio or another reviewed InfoPoint agency, search the directory, locate a nearby agency, or enter an authority code.
 
 All clock times use the device timezone except provider timetable clock labels, which retain the operator's stated IANA timezone. Missing dates, route identities and durations remain unknown rather than being invented.
+
+### Favorites and bus-line order
+
+Use the **star** on a bus-line card to add/remove a favorite without opening the route. Favorites stay at the top across reloads. The ordering is **favorites → UGA campus → city → other networks**, with active, unconfirmed and inactive service sorted within each group, followed by natural route-number order. A favorite city route can therefore precede an unfavorited UGA route. Search and **Active only** still apply to favorites.
+
+Operator labels use explicit UGA `isAthensBus`/selected-provider metadata, with reviewed aliases for older snapshots. Favorites are scoped by network kind, agency ID and native/canonical route ID, so equal IDs in Ohio and Georgia remain distinct. They are saved locally under `tranuga.favorites.v1`, capped at 500 entries. Blocked/full storage keeps session favorites usable; malformed saved entries are ignored. No account or location is needed. See [favorites.ts](src/favorites.ts) and [route-presentation.ts](src/route-presentation.ts).
 
 ### Dark mode and Athens lock
 
@@ -61,7 +67,7 @@ The [reviewed crosswalk](src/data/athens-crosswalk.json) contains 35 route alias
 
 ## Travel notes and service states
 
-Notes use a consistent line icon, a short title, a plain-language explanation and, when needed, expandable **Source details** containing the original provider/diagnostic text. Repeated technical warnings of the same class share a card; distinct operator alerts remain distinct and retain their full wording. Error messages appear before warnings, then informational notes. Text labels convey meaning alongside color; icons are decorative to screen readers.
+Notes are **collapsed dropdowns**, placed after route maps and after the planner map. Short titles and regex-generated fragments replace long diagnostic sentences. Expand **Notes**, then **Full text** for every original provider/diagnostic message. Repeated warnings share a card; operator alerts stay distinct. Errors appear before warnings and information. A blocking request, point-selection or location error opens its dropdown so the next action remains visible. Icons and text convey meaning alongside color.
 
 | Class (`data-note-kind`) | Icon | Meaning and action |
 | --- | --- | --- |
@@ -75,7 +81,21 @@ Notes use a consistent line icon, a short title, a plain-language explanation an
 | `action` | Map pin | Select the trip points or recover from a location error. |
 | `info` | Information circle | Additional context that does not imply an error. |
 
-Informational cards use a quiet green tone, warnings amber, and action/request errors red with `role="alert"`. The mapping lives in [notes.ts](src/notes.ts); it organizes messages for display without changing source status, service availability or planner decisions. Operator alert text is escaped and never rendered as HTML. Service cards sort confirmed active routes first, then unconfirmed, then inactive; route numbers sort naturally within each group. Grey cards remain available for viewing route details, while the planner uses only eligible active service.
+Informational cards use a quiet green tone, warnings amber, and action/request errors red with `role="alert"`. The mapping lives in [notes.ts](src/notes.ts); it organizes messages for display without changing source status, service availability or planner decisions. Operator alert text is escaped and never rendered as HTML. Bus-line cards sort favorites first, then UGA before city, with service state and natural route numbers inside each group. Grey cards remain available for viewing route details, while the planner uses only eligible active service.
+
+[compact-note.ts](src/compact-note.ts) applies ordered, anchored regex rules to known messages; examples:
+
+| Input pattern / evidence | Compact fragment |
+| --- | --- |
+| `^Backup data in use: (sources) (is|are) unavailable` | `Backup · sources offline` |
+| `^(\d+) data disagreements? detected` | `N source conflicts · disputed stop order excluded` |
+| `Showing static stops` | `Static stops · service unconfirmed` |
+| `older than (two|2) minutes` / missing timestamp | `GPS >2 min / time unknown` |
+| `Transit request failed\s*\((\d{3})\)` | `HTTP 503 · retry` |
+| `Predictions unavailable at (N) stops` | `N stops · no ETA · estimated waits` |
+| Planner defaults and assumptions | `Fallback wait: 7.5 min`, `Transfer buffer: 45 s`, other original numeric limits |
+
+Unmatched messages receive conservative whitespace, punctuation and boilerplate cleanup. Route letters/IDs, negation (`no`, `not`, `until`), clock times, counts and cancellation/detour information are preserved. Regex processing changes presentation only; original text is escaped and retained under **Full text**, and service/planning decisions still use source data. Normal notes open only on request; expanded route notes retain their state during refresh.
 
 The footer on every view identifies this as **a student-based open source project, for development purposes only**, followed by **Vibe coded with ❤️ by Codex**. It also keeps the independent-service and estimated-time notices.
 
@@ -304,7 +324,30 @@ The search considers **all** reachable boarding and alighting stops, directed ri
 
 Consistent route geometry estimates bus distance; otherwise stop distances are multiplied by 1.25. Actual run identity can anchor downstream arrivals and intermediate dwell. UGA stop prediction arrays do not identify every run, so matching array positions never prove the same bus. Expired/impossible predictions, old original update times, stale vehicle positions and stale network snapshots are ignored. Tests compare the search with an independent exhaustive-path oracle on 40 generated networks and separately cover vehicle-position timing.
 
-The result is **quickest within this declared model**, with `estimated` or `live-assisted` confidence and visible assumptions. The feeds do not provide complete guaranteed timetables, a pedestrian street graph or accessible-path data. Provider timetable labels do not supply dates. Operator journey comparisons are separate suggestions, use only explicit numeric timing, exclude driving alternatives and do not become a quorum proof of the local algorithm. The result map draws every selected line using supplied road traces/segments, falls back to dashed ordered-stop connectors when geometry is missing, overlays currently reported buses for those lines, and shows walking as dashed straight-line estimates.
+The result is **quickest within this declared model**, with `estimated` or `live-assisted` confidence and visible assumptions. The feeds do not provide complete guaranteed timetables, a pedestrian street graph or accessible-path data. Provider timetable labels do not supply dates. Operator journey comparisons are separate suggestions, use only explicit numeric timing, exclude driving alternatives and do not become a quorum proof of the local algorithm. The result map draws only the selected boarding-to-alighting segments and transfer stops, as described below.
+
+### Journey map, transfer stops and calculation progress
+
+The planner records the exact directed pattern and boarding visit on each ride leg. [journey-map.ts](src/journey-map.ts) selects that variant and clips its trace to the ridden stop sequence. Unused route tails, other variants and unrelated lines are omitted. Ordered loop wrapping is supported, and multipart trace gaps remain separate polylines. Trace matching requires stops within 100 m and a consistent directed order/distance; missing, reversed, unrelated or ambiguous geometry falls back to **dashed connectors through only the used stops**. This remains a schematic display where road geometry is unavailable.
+
+Each boarding after the first gets a numbered **purple ↔ transfer marker** and a “Change at” label in the itinerary. Shared-stop transfers use one marker; walking transfers mark the alighting and next boarding stops. Walking stays dashed. The camera fits the traveled segments and stops; a bus elsewhere on a selected line does not widen the view. Editing endpoints clears old trip lines, transfer markers and journey buses.
+
+The calculate button shows **Calculating route…** and an accessible indeterminate loading bar while feeds load and the journey is calculated. It returns to normal on success/failure; navigation removes the old progress UI. No percentage is invented. Inputs remain disabled during calculation, and reduced-motion users get a static busy bar. Normal notes stay below maps in collapsed dropdowns; full assumptions are also collapsed.
+
+### Bus marker interpolation and accuracy
+
+[vehicle-motion.ts](src/vehicle-motion.ts) smooths **displayed markers between received observations**. It preserves original data for planning, replication, storage, popup update ages and service decisions. Route-detail and completed-journey maps refresh positions every 15 seconds while visible; geometry is not recalculated by a marker refresh.
+
+| Guard | Display policy |
+| --- | --- |
+| Fresh, increasing observation times; same bus and route | Interpolate toward the accepted fix for at most **1.2 s**, with shortest-angle heading rotation. |
+| Distance from the latest accepted GPS fix | At most **20 m** throughout the tween; larger moves first catch up to within that cap. |
+| Observations more than 60 s apart, movement >120 m, or implied speed >25 m/s | Snap to the received position. |
+| Unknown/stale time (>2 min), time >1 s in the future, saved fallback, or route reassignment | Snap; no invented motion. |
+| Repeated cached fix / out-of-order timestamp | Keep the current tween / ignore the older fix. |
+| Reduced motion / hidden page / removed map | Snap or finish at the known fix; cancel animation frames and listeners. |
+
+There is **no extrapolation beyond the received fix**, and coordinates, headings and observation timestamps in the source data are not averaged or rewritten. The 20 m cap describes display lag relative to an accepted reported fix; provider GPS error, network delay and the bus's true current position remain unknown. Short straight-line tweening can cross a corner within that cap. This provides brief smoothing with bounded extra display error, rather than promising continuous measured motion between polls. Animation state is local to the map and is cleared on navigation/network changes.
 
 ## Tests and verification
 
@@ -328,6 +371,7 @@ npx wrangler deploy --dry-run --outdir /tmp/tranuga-worker
 | [replication-service.test.ts](tests/replication-service.test.ts) | Concurrent crawling, schema/storage guards, persistent fallback, bounded retention and nested coordinator health. |
 | [planner.test.ts](tests/planner.test.ts) | Directed journeys, loops, transfers, ETA/EDT, arbitrary/geolocation coordinates, stale/unreachable cases and independent oracle. |
 | [worker.test.ts](tests/worker.test.ts) | Approved GET/POST contracts, payload limits, system separation, origin/method validation, proxy/caching failures and comparison privacy. |
+| [journey-map.test.ts](tests/journey-map.test.ts), [vehicle-motion.test.ts](tests/vehicle-motion.test.ts), [favorites.test.ts](tests/favorites.test.ts) | Partial/loop/multipart geometry, transfer identity, bounded interpolation/snap rules, favorite persistence and ordering. |
 | [preferences.test.ts](tests/preferences.test.ts) | Preference defaults/restore/storage failure, local network eligibility, all reviewed stops in bounds, foreign-bus filtering and complete-pattern exclusion. |
 | [ui.test.ts](tests/ui.test.ts), [presentation.test.ts](tests/presentation.test.ts), [browser tests](tests/e2e/app.spec.ts) | Rendering helpers, service ordering, note classes, place normalization/cache/privacy and desktop/mobile workflows, selection/race guards and failures. |
 
@@ -338,7 +382,7 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
 ```
 
-The latest November 13 acceptance run passed **393 deterministic tests and 66 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
+The latest November 13 acceptance run passed **416 deterministic tests and 78 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
 
 ## Source map and maintenance
 
@@ -350,7 +394,11 @@ src/preferences.ts          Theme/area preference defaults and storage
 public/theme.js             Early saved/system palette before app rendering
 src/places.ts               Stop/address autocomplete and private query transport
 src/notes.ts                Readable note classes, icons and source details
-src/route-presentation.ts   Confirmed service ordering and labels
+src/route-presentation.ts   Favorite/operator/service ordering and labels
+src/favorites.ts            Bounded per-network local bus-line favorites
+src/compact-note.ts         Conservative regex note fragments
+src/journey-map.ts          Used ride geometry and transfer-stop extraction
+src/vehicle-motion.ts       Bounded display interpolation of accepted GPS fixes
 src/planner.ts              Browser earliest-arrival estimator
 src/api/                    Original adapters, Passio contracts and transport
 src/replication/             Concurrent source coordinator, merge and snapshot store

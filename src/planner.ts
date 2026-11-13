@@ -23,6 +23,8 @@ export interface WaitLeg extends BaseLeg { kind: 'wait'; source: TimingSource }
 export interface RideLeg extends BaseLeg {
   kind: 'ride'; routeId: string; routeName: string; direction: string;
   stops: Stop[];
+  /** Identifies the exact directed variant/visit used by the map. */
+  patternId?: string; boardingIndex?: number;
   /** Describes the boarding prediction; intermediate travel may be estimated. */
   source: TimingSource;
 }
@@ -370,7 +372,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
           const legs: JourneyLeg[] = [];
           if (candidate.start > current.time) legs.push({ kind: 'wait', from: place(stop), to: place(stop), startTime: current.time, endTime: candidate.start, source });
           legs.push({ kind: 'ride', routeId: pattern.routeId, routeName: active.get(pattern.routeId)!.name, direction: pattern.direction,
-            from: place(stop), to: place(next), startTime: candidate.start, endTime: arrival, stops: ridden.slice(0, step + 1), source });
+            from: place(stop), to: place(next), startTime: candidate.start, endTime: arrival, stops: ridden.slice(0, step + 1), source, patternId: pattern.id, boardingIndex: at });
           offer({ key, time: arrival, walking: current.walking, boardings: current.boardings + 1, previous: current, legs });
         }
       }

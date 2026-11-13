@@ -28,7 +28,7 @@ function responseObject(value: unknown, context: string): Record<string, unknown
 export function normalizePassioRoutes(value: unknown, agencyId: string): Route[] {
   const variants = rows(value, 'Passio route catalog').flatMap(row => {
     const id = routeIdentity(agencyId, text(row.myid), row.groupId); if (!id || (row.userId !== undefined && text(row.userId) !== agencyId)) return [];
-    return [{ id, agencyId, name: text(row.name, `Route ${id}`), shortName: text(row.shortName, id), color: color(row.color), active: text(row.archive, '0') !== '1' && text(row.outdated, '0') !== '1' && text(row.mapApp, '1') !== '0', availability: 'published' as const }];
+    return [{ id, agencyId, operator: agencyId === '3994' ? 'uga' as const : 'city' as const, name: text(row.name, `Route ${id}`), shortName: text(row.shortName, id), color: color(row.color), active: text(row.archive, '0') !== '1' && text(row.outdated, '0') !== '1' && text(row.mapApp, '1') !== '0', availability: 'published' as const }];
   });
   const routes = new Map<string, Route>();
   for (const route of variants) { const existing = routes.get(route.id); routes.set(route.id, existing ? { ...existing, active: existing.active || route.active } : route); }

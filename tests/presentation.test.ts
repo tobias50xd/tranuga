@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildNotes, classifyNote, renderNotes } from '../src/notes';
+import { buildNotes, classifyNote, renderNotes, compactNote } from '../src/notes';
 import { routeState, sortRoutes } from '../src/route-presentation';
 import { matchStops, normalizePlaces, PlaceSearch } from '../src/places';
 import { knownStops, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from '../src/replication';
@@ -77,4 +77,20 @@ describe('place and stop search', () => {
     await expect(search.search('Tate', bias, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     await search.search('Tate', bias); expect(fetcher).toHaveBeenCalledTimes(3);
   });
+});
+
+describe('compact note fragments',()=>{
+ it('keeps warnings collapsed and opens actionable errors',()=>{
+  expect(renderNotes(['Showing static stops; current stop availability could not be confirmed.'])).toContain('<details class="notes-dropdown">');
+  expect(renderNotes(['Choose a start and destination from the suggestions, or use the map.'], 'action')).toContain('<details class="notes-dropdown" open>');
+  expect(renderNotes(['Showing static stops; current stop availability could not be confirmed.'])).toContain('Static stops · service unconfirmed');
+ });
+});
+
+it('compacts known diagnostics while preserving counts, route letters, negation and clock times',()=>{
+ expect(compactNote('3 data disagreements detected. Matching reports take precedence; disputed stop sequences are excluded from trip planning.')).toBe('3 source conflicts · disputed stop order excluded');
+ expect(compactNote('Some vehicle positions are older than two minutes or have no timestamp. Check their update time.')).toBe('GPS >2 min / time unknown');
+ expect(compactNote('Transit request failed (503).')).toBe('HTTP 503 · retry');
+ const alert=compactNote('Route A is not operating until 22:00. Use Route 12 instead.');
+ for(const token of ['Route A','not','until 22:00','Route 12']) expect(alert).toContain(token);
 });

@@ -4,6 +4,12 @@ The November 13 UI refactor acceptance run passed **385 deterministic tests and 
 
 The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/runs/43353286621) completed verification and deployment successfully, publishing [tranuga.tobias-seeanner.workers.dev](https://tranuga.tobias-seeanner.workers.dev). Inspect the latest action for publication of subsequent revisions; local validation alone is not a deployment result.
 
+## Favorites, compact notes and ride-focused maps — November 13
+
+An isolated checkout based on `66f6422` passed **416 deterministic tests**, eight opt-in live skips, **78 desktop/mobile browser tests**, TypeScript/build and the Wrangler bundle dry run. Isolation preserved concurrent reconciliation edits in the shared workspace.
+
+The new coverage verifies persisted network-scoped favorites; favorite/UGA/city ordering; compact, escaped note fragments and original text; collapsed notes after maps; calculation progress success/failure; exact ride variants and boarding visits; clipped route tails, loops and multipart gaps; shared/walking transfer stops; bounded GPS interpolation, out-of-order/cached/stale rejection and reduced motion; and cleanup when endpoints or views change. Itinerary maps poll only the used routes' bus markers without redrawing the camera or using smoothed data in planning.
+
 ## Dark mode and Athens lock — November 13
 
 The main-menu controls remember theme and area settings. Athens lock defaults to on, offers only the reviewed Georgia networks, filters foreign buses and trip points, and constrains route/planner maps to a responsive whole-Athens overview. Dark mode covers the interface and map tile/control palette. The shared rectangle includes all 608 reviewed local stops.

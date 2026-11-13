@@ -4,7 +4,7 @@ import ohioFixture from '../fixtures/passio-ohio.json' with { type: 'json' };
 import ugaPassioFixture from '../fixtures/passio-uga.json' with { type: 'json' };
 import passioExtras from '../fixtures/passio-extras.json' with { type: 'json' };
 
-type MockOptions = { outsideVehicle?: boolean; failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[] };
+type MockOptions = { cityRoute?: boolean; transfer?: boolean; outsideVehicle?: boolean; failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[] };
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => { const errors: string[] = []; pageErrors.set(page, errors); page.on('pageerror', error => errors.push(error.message)); });
 test.afterEach(({ page }) => { expect(pageErrors.get(page)).toEqual([]); });
@@ -13,6 +13,8 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
   const data = structuredClone(fixture);
   data.ugaVehicles.forEach(bus => { bus.lastUpdate = options.staleVehicles ? Date.now() - 360000 : Date.now(); });
   if (options.outsideVehicle) data.ugaVehicles.push({ ...data.ugaVehicles[0], id:'999999', name:'Outside bus', latitude:39.33, longitude:-82.1 });
+  if (options.cityRoute) data.ugaRoutes.push({...data.ugaRoutes[1],id:9001,new_id:'9001',long_name:'City Line 1',short_name:'1',isAthensBus:true});
+  if (options.transfer) { data.ugaRoutes[0].active=true; data.ugaRoutes.push({...data.ugaRoutes[1],id:9009,new_id:'9009',long_name:'Unused Line',short_name:'X'}); }
   data.ugaTracking.forEach((stop, i) => { stop.times = [Date.now() + 300000 + i * 60000]; });
   data.ugaStop.forEach(stop => { stop.times = [Date.now() + 180000]; });
   await page.route('https://tile.openstreetmap.org/**', route => route.abort());
@@ -52,7 +54,11 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
     } else if (path.endsWith('/cache/Buses')) result = options.noVehicles ? [] : data.ugaVehicles;
     else if (path.includes('/cache/routeTracking_')) {
       if (options.failTracking) return route.fulfill({ status: 503, json: { error: 'Tracking unavailable' } });
-      result = data.ugaTracking;
+      if (options.transfer) {
+        const id=Number(path.split('routeTracking_')[1]);
+        const points=id===5750?[[90001,'Start Stop',33.95,-83.41],[90002,'Change Stop',33.95,-83.38]]:id===5741?[[90002,'Change Stop',33.95,-83.38],[90003,'End Stop',33.95,-83.35]]:[[90004,'Unused A',34,-83.41],[90005,'Unused B',34,-83.40]];
+        result=points.map(([stopId,name,lat,lon],i)=>({id:`r_${id}__s_${stopId}`,routeId:id,direction:0,stopSequence:i+1,stop:{id:String(stopId),name,latitude:lat,longitude:lon},times:[Date.now()+300000+i*60000]}));
+      } else result = data.ugaTracking;
     } else if (path.includes('/cache/stop_')) result = data.ugaStop;
     else if (path.endsWith('/version.json')) result = { version: 1086 };
     else if (path.endsWith('/busData.json')) result = data.ugaStatic;
@@ -205,7 +211,7 @@ test('failed live topology retains verified static stop order for planning', asy
   await page.locator('nav [data-nav="plan"]').click();
   await page.getByRole('combobox', { name: 'Start', exact: true }).fill('33.948,-83.377'); await page.getByRole('combobox', { name: 'Destination', exact: true }).fill('33.95,-83.38');
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
-  await expect(page.locator('#trip-status')).toContainText('verified static stop order');
+  await expect(page.locator('#trip-notes')).toContainText('verified static stop order');
   await expect(page.locator('.trip-summary')).toBeVisible();
 });
 
@@ -256,11 +262,15 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await page.getByRole('combobox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
   await page.getByRole('combobox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
+  await expect(page.getByRole('progressbar', {name:'Route calculation'})).toBeVisible();
+  await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy', 'true');
   await expect(page.locator('#trip-origin')).toBeDisabled();
   await expect(page.locator('#swap')).toBeDisabled();
   release();
   await expect(page.locator('.trip-summary')).toBeVisible();
   await expect(page.locator('#trip-origin')).toBeEnabled();
+  await expect(page.getByRole('progressbar', {name:'Route calculation'})).toBeHidden();
+  await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy', 'false');
 });
 
 test('late agency directory responses cannot overwrite a newer code lookup', async ({ page }) => {
@@ -332,7 +342,7 @@ test('Passio data supports Georgia trips when the UGA catalog is unavailable', a
   await page.getByRole('button',{name:'Find quickest bus trip'}).click();
   await expect(page.locator('.trip-summary')).toBeVisible();
   await expect(page.locator('.journey-leg.ride')).not.toHaveCount(0);
-  await expect(page.locator('#trip-status')).toContainText('Backup data');
+  await expect(page.locator('#trip-notes')).toContainText('Backup data');
 });
 
 test('provider metadata, fleet search, timetable and explicit trip comparison use the extracted reads',async({page})=>{
@@ -442,9 +452,10 @@ test('late address responses cannot overwrite new hints or a removed planner', a
 test('travel notes expose useful categories and preserve original warnings in source details', async ({ page }) => {
   await mockTransit(page, { staleVehicles: true }); await page.goto('/'); await page.locator('[data-route="5750"]').click();
   const freshness = page.locator('#route-warnings [data-note-kind="freshness"]');
-  await expect(freshness.getByRole('heading')).toHaveText('Check the update time');
+  await page.locator('#route-warnings > details > summary').click();
+  await expect(freshness.getByRole('heading')).toHaveText('GPS age');
   await expect(freshness.locator('svg')).toHaveAttribute('aria-hidden', 'true');
-  await freshness.getByText('Source details', { exact: true }).click();
+  await freshness.getByText('Full text', { exact: true }).click();
   await expect(freshness.locator('details')).toContainText('older than two minutes');
 });
 
@@ -553,4 +564,75 @@ test('locked maps stop at the whole-Athens overview, stay bounded on resize, and
   await unlockAthens(page);
   for (let i=0;i<10;i++) await page.locator('.leaflet-control-zoom-out').click();
   await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled', 'false');
+});
+
+
+test('favorites persist, stay separate from route navigation, and outrank UGA then city ordering', async ({ page }) => {
+  await mockTransit(page, {cityRoute:true}); await page.goto('/');
+  await expect(page.locator('.route-card')).toHaveCount(3);
+  await expect(page.locator('.route-card').nth(0).locator('[data-route]')).toHaveAttribute('data-route','5750');
+  await expect(page.locator('.route-card').nth(1).locator('[data-route]')).toHaveAttribute('data-route','5741');
+  await expect(page.locator('.route-card').nth(2).locator('[data-route]')).toHaveAttribute('data-route','9001');
+  await page.locator('[data-favorite="9001"]').click(); await expect(page).toHaveURL(/\/routes$/);
+  await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','9001');
+  await expect(page.locator('[data-favorite="9001"]')).toHaveAttribute('aria-pressed','true');
+  await page.reload(); await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','9001');
+  await page.locator('[data-favorite="9001"]').click(); await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','5750');
+  await page.locator('[data-favorite="5741"]').click(); await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  await page.getByLabel('Active only').check(); await expect(page.locator('[data-route="5741"]')).toHaveCount(0);
+});
+
+test('notes collapse below the map with compact fragments and optional original text', async ({ page }) => {
+  await mockTransit(page,{staleVehicles:true}); await page.goto('/routes/5750');
+  const notes=page.locator('#route-warnings > details'); await expect(notes).toBeVisible(); await expect(notes).not.toHaveAttribute('open','');
+  const map=(await page.locator('#route-map').boundingBox())!,box=(await notes.boundingBox())!; expect(box.y).toBeGreaterThan(map.y+map.height);
+  const fragment=notes.locator('[data-note-kind="freshness"] p'); await expect(fragment).toBeHidden();
+  await notes.locator(':scope > summary').click(); await expect(fragment).toHaveText('GPS >2 min / time unknown');
+  await notes.locator('[data-note-kind="freshness"] .note-details > summary').click(); await expect(notes).toContainText('older than two minutes');
+  await page.locator('nav [data-nav="plan"]').click(); await expect(page.locator('.planning-note > details')).not.toHaveAttribute('open','');
+});
+
+test('the journey draws only used bus lines and marks the actual transfer stop', async ({ page }) => {
+  const {calls}=await mockTransit(page,{transfer:true,noVehicles:true}); await page.goto('/plan');
+  await page.locator('#trip-origin').fill('33.95,-83.41'); await page.locator('#trip-destination').fill('33.95,-83.35');
+  await page.locator('#max-walk').selectOption('800'); await page.getByRole('button',{name:'Find quickest bus trip'}).click();
+  await expect(page.locator('.journey-leg.ride')).toHaveCount(2); await expect(page.locator('.transfer-marker')).toHaveCount(1);
+  await expect(page.locator('.transfer-marker')).toHaveAttribute('title',/Change Stop/);
+  await expect(page.locator('.transfer-hint')).toContainText('Change Stop');
+  const drawn=await page.locator('path.journey-ride').evaluateAll(paths=>paths.map(path=>path.getAttribute('data-route-id')));
+  expect(new Set(drawn)).toEqual(new Set(['5750','5741'])); expect(drawn).not.toContain('9009');
+  expect(calls.some(url=>url.includes('routeTracking_9009'))).toBe(true);
+  await expect(page.locator('#trip-notes > details').first()).not.toHaveAttribute('open','');
+  await page.locator('#trip-origin').fill('33.951,-83.41'); await expect(page.locator('path.journey-ride')).toHaveCount(0); await expect(page.locator('.transfer-marker')).toHaveCount(0);
+});
+
+for (const reduced of [false,true]) test(`bus updates ${reduced?'respect reduced motion':'interpolate in the journey map'} without extrapolating`, async ({ page }) => {
+  await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'}); await page.clock.install();
+  const {data}=await mockTransit(page); await page.goto('/plan');
+  const from=data.ugaTracking[0].stop,to=data.ugaTracking[8].stop;
+  await page.locator('#trip-origin').fill(`${from.latitude},${from.longitude}`); await page.locator('#trip-destination').fill(`${to.latitude},${to.longitude}`);
+  await page.getByRole('button',{name:'Find quickest bus trip'}).click(); await expect(page.locator('.bus-marker')).toHaveCount(1);
+  await page.route('**/api?url=*', async route=>{
+    if (!new URL(route.request().url()).searchParams.get('url')?.endsWith('/Buses')) { await route.fallback(); return; }
+    const at=await page.evaluate(()=>Date.now());
+    await route.fulfill({json:[{...data.ugaVehicles[0],longitude:data.ugaVehicles[0].longitude+.0003,heading:200,lastUpdate:at,proxyTimestamp:at}]});
+  });
+  await page.clock.fastForward(16000); await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label',/, S/);
+  const initial=await page.locator('.bus-marker').getAttribute('style');
+  await page.clock.runFor(600); const middle=await page.locator('.bus-marker').getAttribute('style');
+  await page.clock.runFor(1000); const final=await page.locator('.bus-marker').getAttribute('style');
+  if (reduced) {expect(initial).toBe(final);expect(middle).toBe(final);} else {expect(initial).not.toBe(middle);expect(middle).not.toBe(final);}
+  await page.clock.runFor(2000); await expect(page.locator('.bus-marker')).toHaveAttribute('style',final!);
+  await page.locator('nav [data-nav="routes"]').click(); await page.clock.runFor(1500); await expect(page.locator('.route-card')).toHaveCount(2);
+});
+
+test('calculation progress ends on failure and returns the form to a usable state', async ({ page }) => {
+  await mockTransit(page); await page.clock.install(); await page.goto('/plan');
+  await page.locator('#trip-origin').fill('33.94,-83.38'); await page.locator('#trip-destination').fill('33.95,-83.37');
+  await page.clock.fastForward(16000);
+  await page.route('**/api?url=*', async route=>{
+    if (new URL(route.request().url()).searchParams.get('url')?.endsWith('/cache/Routes')) await route.fulfill({status:503,json:{error:'Offline'}}); else await route.fallback();
+  });
+  await page.getByRole('button',{name:'Find quickest bus trip'}).click(); await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('#trip-progress')).toBeHidden(); await expect(page.locator('#find-trip')).toBeEnabled(); await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy','false');
 });

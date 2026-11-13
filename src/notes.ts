@@ -1,4 +1,6 @@
 import { escapeHtml as e } from './ui';
+import { compactNote } from './compact-note';
+export { compactNote } from './compact-note';
 
 export type NoteKind = 'service' | 'availability' | 'backup' | 'freshness' | 'comparison' | 'estimate' | 'connection' | 'action' | 'info';
 export interface Note { kind: NoteKind; tone: 'info' | 'warning' | 'error'; title: string; message: string; details?: string[] }
@@ -40,5 +42,11 @@ export function buildNotes(messages: string[], context: Context = 'data'): Note[
 }
 export function renderNotes(messages: string[], context: Context = 'data'): string {
   const notes=buildNotes(messages,context); if (!notes.length) return '';
-  return `<div class="notes" aria-label="Travel notes">${notes.map(note=>`<article class="note note-${note.tone}" data-note-kind="${note.kind}"${note.tone==='error'?' role="alert"':''}>${noteIcon(note.kind)}<div><h3>${e(note.title)}</h3><p>${e(note.message)}</p>${note.details?.length ? `<details class="note-details"><summary>${note.details.length>1?`${note.details.length} source details`:'Source details'}</summary><ul>${note.details.map(detail=>`<li>${e(detail)}</li>`).join('')}</ul></details>`:''}</div></article>`).join('')}</div>`;
+  const titles: Record<NoteKind,string> = { service:'Service', availability:'Plan limits', backup:'Backup', freshness:'GPS age', comparison:'Sources', estimate:'Estimates', connection:'Connection', action:context==='location'?'Location':'Trip points', info:'Info' };
+  const urgent = notes.some(note => note.tone === 'error');
+  return `<details class="notes-dropdown"${urgent?' open':''}><summary>Notes (${notes.length})<span class="note-peek">${e([...new Set(notes.map(note=>titles[note.kind]))].slice(0,3).join(' · '))}</span></summary><div class="notes" aria-label="Travel notes">${notes.map(note=>{
+    const originals=note.details || [note.message];
+    const fragments=[...new Set(originals.map(compactNote))];
+    return `<article class="note note-${note.tone}" data-note-kind="${note.kind}"${note.tone==='error'?' role="alert"':''}>${noteIcon(note.kind)}<div><h3>${e(titles[note.kind])}</h3><p>${fragments.map(e).join(' · ')}</p><details class="note-details"><summary>Full text${originals.length>1?` (${originals.length})`:''}</summary><ul>${originals.map(detail=>`<li>${e(detail)}</li>`).join('')}</ul></details></div></article>`;
+  }).join('')}</div></details>`;
 }
