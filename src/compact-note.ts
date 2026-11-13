@@ -1,6 +1,12 @@
+const cleanBoilerplate = (text: string) => text.replace(/\bplease(?: note that)?\s+/gi, '')
+    .replace(/^(?:there (?:is|are)|the app is|this route is|these routes are)\s+/i, '')
+    .replace(/\b(?:is|are) (?:currently )?(unavailable|available|cancelled|canceled|closed|delayed)\b/gi, '$1')
+    .replace(/;\s*|[.!?]\s+(?=[A-Z])/g, ' · ').replace(/\s*·\s*/g, ' · ').replace(/[.;]\s*$/, '').trim();
+
 /** Ordered, bounded regex rules for known diagnostics. Preserve unknown alerts, negations and numbers. */
-export function compactNote(raw: string): string {
+export function compactNote(raw: string, serviceAlert = false): string {
   const text = raw.replace(/\s+/g, ' ').trim();
+  if (serviceAlert) return cleanBoilerplate(text);
   let match: RegExpMatchArray | null;
   if ((match = text.match(/^Backup data in use:\s*(.+?)\s+(?:is|are) unavailable\.?$/i))) return `Backup · ${match[1]} offline`;
   if ((match = text.match(/^(\d+) data disagreements? detected/i))) return `${match[1]} source conflicts · disputed stop order excluded`;
@@ -28,8 +34,5 @@ export function compactNote(raw: string): string {
   if (/^When a stop ETA is missing/i.test(text)) return 'No stop ETA: recent GPS estimate · faster provider ETA preferred';
   if ((match = text.match(/^Transfers include (\d+) seconds.*older than (\d+) seconds/i))) return `Transfer buffer: ${match[1]} s · ETA age limit: ${match[2]} s`;
   if (/^Operator alternatives|^Operator suggestions are a separate comparison/i.test(text)) return 'Operator comparison · waits may be missing · separate estimate';
-  return text.replace(/\bplease(?: note that)?\s+/gi, '')
-    .replace(/^(?:there (?:is|are)|the app is|this route is|these routes are)\s+/i, '')
-    .replace(/\b(?:is|are) (?:currently )?(unavailable|available|cancelled|canceled|closed|delayed)\b/gi, '$1')
-    .replace(/;\s*|[.!?]\s+(?=[A-Z])/g, ' · ').replace(/\s*·\s*/g, ' · ').replace(/[.;]\s*$/, '').trim();
+  return cleanBoilerplate(text);
 }

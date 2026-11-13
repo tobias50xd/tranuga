@@ -94,3 +94,11 @@ it('compacts known diagnostics while preserving counts, route letters, negation 
  const alert=compactNote('Route A is not operating until 22:00. Use Route 12 instead.');
  for(const token of ['Route A','not','until 22:00','Route 12']) expect(alert).toContain(token);
 });
+
+it('keeps cancellation wording visible when an operator alert also contains a diagnostic phrase',()=>{
+ const alert='Route A is not operating until 22:00; vehicle positions are older than two minutes. Use Route 12 instead.';
+ const html=renderNotes([alert],'service');
+ const fragment=html.match(/<p>(.*?)<\/p>/)![1];
+ for(const token of ['Route A','not operating','until 22:00','Route 12'])expect(fragment).toContain(token);
+ expect(compactNote(alert,true)).toContain('not operating until 22:00');
+});

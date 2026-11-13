@@ -95,7 +95,7 @@ Informational cards use a quiet green tone, warnings amber, and action/request e
 | `Predictions unavailable at (N) stops` | `N stops · no ETA · estimated waits` |
 | Planner defaults and assumptions | `Fallback wait: 7.5 min`, `Transfer buffer: 45 s`, other original numeric limits |
 
-Unmatched messages receive conservative whitespace, punctuation and boilerplate cleanup. Route letters/IDs, negation (`no`, `not`, `until`), clock times, counts and cancellation/detour information are preserved. Regex processing changes presentation only; original text is escaped and retained under **Full text**, and service/planning decisions still use source data. Normal notes open only on request; expanded route notes retain their state during refresh.
+Operator service alerts bypass diagnostic substitutions and receive only conservative whitespace, punctuation and boilerplate cleanup; unmatched diagnostics use that same conservative cleanup. Route letters/IDs, negation (`no`, `not`, `until`), clock times, counts and cancellation/detour information are preserved. Regex processing changes presentation only; original text is escaped and retained under **Full text**, and service/planning decisions still use source data. Normal notes open only on request; expanded route notes retain their state during refresh.
 
 The footer on every view identifies this as **a student-based open source project, for development purposes only**, followed by **Vibe coded with ❤️ by Codex**. It also keeps the independent-service and estimated-time notices.
 
@@ -382,7 +382,7 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
 ```
 
-The latest November 13 acceptance run passed **416 deterministic tests and 78 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
+The latest November 13 acceptance run passed **417 deterministic tests and 78 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
 
 ## Source map and maintenance
 

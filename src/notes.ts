@@ -46,7 +46,7 @@ export function renderNotes(messages: string[], context: Context = 'data'): stri
   const urgent = notes.some(note => note.tone === 'error');
   return `<details class="notes-dropdown"${urgent?' open':''}><summary>Notes (${notes.length})<span class="note-peek">${e([...new Set(notes.map(note=>titles[note.kind]))].slice(0,3).join(' · '))}</span></summary><div class="notes" aria-label="Travel notes">${notes.map(note=>{
     const originals=note.details || [note.message];
-    const fragments=[...new Set(originals.map(compactNote))];
+    const fragments=[...new Set(originals.map(text=>compactNote(text,note.kind==='service')))];
     return `<article class="note note-${note.tone}" data-note-kind="${note.kind}"${note.tone==='error'?' role="alert"':''}>${noteIcon(note.kind)}<div><h3>${e(titles[note.kind])}</h3><p>${fragments.map(e).join(' · ')}</p><details class="note-details"><summary>Full text${originals.length>1?` (${originals.length})`:''}</summary><ul>${originals.map(detail=>`<li>${e(detail)}</li>`).join('')}</ul></details></div></article>`;
   }).join('')}</div></details>`;
 }

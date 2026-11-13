@@ -6,7 +6,7 @@ The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/
 
 ## Favorites, compact notes and ride-focused maps — November 13
 
-An isolated checkout based on `66f6422` passed **416 deterministic tests**, eight opt-in live skips, **78 desktop/mobile browser tests**, TypeScript/build and the Wrangler bundle dry run. Isolation preserved concurrent reconciliation edits in the shared workspace.
+An isolated checkout based on `66f6422` passed **417 deterministic tests**, eight opt-in live skips, **78 desktop/mobile browser tests**, TypeScript/build and the Wrangler bundle dry run. Isolation preserved concurrent reconciliation edits in the shared workspace.
 
 The new coverage verifies persisted network-scoped favorites; favorite/UGA/city ordering; compact, escaped note fragments and original text; collapsed notes after maps; calculation progress success/failure; exact ride variants and boarding visits; clipped route tails, loops and multipart gaps; shared/walking transfer stops; bounded GPS interpolation, out-of-order/cached/stale rejection and reduced motion; and cleanup when endpoints or views change. Itinerary maps poll only the used routes' bus markers without redrawing the camera or using smoothed data in planning.
 
