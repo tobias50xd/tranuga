@@ -7,7 +7,6 @@ export interface SourceIdentity { id: string; label: string; priority: number; a
 export interface Observation<T> { source: SourceIdentity; at: number; value: T; cached: boolean }
 export interface MergeCounts { agreements: number; conflicts: number; singleSource: number; cached: number }
 const LIVE_BACKUP_MS = 120000;
-const angle = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 const seq = (pattern: RoutePattern) => JSON.stringify(pattern.stops.map(stop => stop.id));
 const samePattern = (a: RoutePattern, b: RoutePattern) => seq(a) === seq(b) && (a.loop === undefined || b.loop === undefined || a.loop === b.loop);
 const group = <T>(values: T[], key: (value: T) => string) => {
@@ -25,7 +24,7 @@ function withRef<T extends Provenance>(value: T, observation: Observation<unknow
 /** Pure, region-scoped merge. Never joins entities by name or proximity alone. */
 export class MergeSession {
   readonly counts: MergeCounts = { agreements: 0, conflicts: 0, singleSource: 0, cached: 0 };
-  constructor(private aliases: Crosswalk = { routes: [], stops: [], vehicles: [] }, private now = Date.now(), private agencyId = 'uga') {}
+  constructor(private aliases: Crosswalk = { routes: [], stops: [], vehicles: [] }, private now = Date.now(), private agencyId = 'uga', private vehicleQuorum = 1) {}
   canonical(kind: 'routes' | 'stops' | 'vehicles', id: string, source: SourceIdentity): string {
     if (!source.aliasKey) return `${source.prefix ?? ''}${id}`;
     return this.aliases[kind].find(entry => entry.sources[source.aliasKey!] === id)?.id ?? `${source.prefix ?? ''}${id}`;
@@ -57,7 +56,7 @@ export class MergeSession {
       return a.source.priority - b.source.priority || b.at - a.at || a.source.id.localeCompare(b.source.id);
     });
   }
-  private choose<T extends Provenance>(input: Observation<T>[], compatible: (a: T, b: T) => boolean, observed?: (value: T) => number | undefined, voteable: (value: T) => boolean = () => true): T {
+  private ballot<T extends Provenance>(input: Observation<T>[], compatible: (a: T, b: T) => boolean, observed?: (value: T) => number | undefined, voteable: (value: T) => boolean = () => true) {
     const values = this.preferred(input, observed);
     // At most one vote per source. Multiple rows from one feed cannot manufacture a quorum.
     const unique = new Map<string, Observation<T>>();
@@ -70,10 +69,14 @@ export class MergeSession {
       if (candidate.length <= clique.length) continue;
       if (candidate.every((a, i) => candidate.slice(i + 1).every(b => compatible(a.value, b.value)))) clique = candidate;
     }
+    const conflict = fresh.some((a, i) => fresh.slice(i + 1).some(b => !compatible(a.value, b.value)));
+    return { values, fresh, clique, conflict };
+  }
+  private choose<T extends Provenance>(input: Observation<T>[], compatible: (a: T, b: T) => boolean, observed?: (value: T) => number | undefined, voteable: (value: T) => boolean = () => true): T {
+    const { values, clique, conflict } = this.ballot(input, compatible, observed, voteable);
     const selected = this.preferred(clique.length >= 2 ? clique : values, observed)[0];
     const selectedCached = selected.cached || cachedValue(selected.value);
     const corroborated = clique.length >= 2;
-    const conflict = fresh.some((a, i) => fresh.slice(i + 1).some(b => !compatible(a.value, b.value)));
     if (corroborated) this.counts.agreements++;
     else if (selectedCached) this.counts.cached++;
     else this.counts.singleSource++;
@@ -118,7 +121,23 @@ export class MergeSession {
   }
   vehicles(input: Observation<Vehicle[]>[]): Vehicle[] {
     const values = input.flatMap(observation => observation.value.filter(bus => !(observation.cached || cachedValue(bus)) || this.now - snapshotTime(bus, observation.at) <= 300000).map(bus => mapValue(observation, { ...withRef(bus, observation, bus.id), id: this.canonical('vehicles', bus.id, observation.source), routeId: this.canonical('routes', bus.routeId, observation.source) })));
-    return [...group(values, value => value.value.id).values()].map(items => this.choose(items, (a, b) => a.routeId === b.routeId && distanceMeters(a, b) <= 100 && angle(a.heading, b.heading) <= 45 && Math.abs(a.updatedAt! - b.updatedAt!) <= 60000, value => value.updatedAt, value => value.updatedAt !== undefined && this.now - value.updatedAt <= LIVE_BACKUP_MS && value.updatedAt <= this.now + 60000));
+    const result: Vehicle[] = [];
+    for (const grouped of group(values, value => value.value.id).values()) {
+      // A current marker always supersedes an explicitly outdated duplicate.
+      const hasActive = grouped.some(item => !item.cached && !cachedValue(item.value) && item.value.active === true);
+      const items = hasActive ? grouped.filter(item => item.value.active !== false) : grouped;
+      const compatible = (a: Vehicle, b: Vehicle) => a.routeId === b.routeId && distanceMeters(a, b) <= 100 && (a.updatedAt === undefined || b.updatedAt === undefined || Math.abs(a.updatedAt - b.updatedAt) <= 60000);
+      const voteable = (value: Vehicle) => value.active !== false && (value.active === true || value.updatedAt !== undefined && this.now - value.updatedAt <= LIVE_BACKUP_MS && value.updatedAt <= this.now + 60000);
+      const ballot = this.ballot(items, compatible, value => value.updatedAt, voteable);
+      if (this.vehicleQuorum > 1 && ballot.clique.length < this.vehicleQuorum) {
+        if (ballot.conflict) this.counts.conflicts++;
+        else if (ballot.values.every(item => item.cached || cachedValue(item.value))) this.counts.cached++;
+        else this.counts.singleSource++;
+        continue;
+      }
+      result.push(this.choose(items, compatible, value => value.updatedAt, voteable));
+    }
+    return result;
   }
   departures(input: Observation<Departure[]>[]): Departure[] {
     const values = input.filter(observation => !observation.cached || this.now - observation.at <= LIVE_BACKUP_MS).flatMap(observation => observation.value.filter(departure => (departure.departureTime ?? departure.arrivalTime) >= this.now - 30000 && (!cachedValue(departure) || this.now - snapshotTime(departure, observation.at) <= LIVE_BACKUP_MS) && (departure.updatedAt === undefined || this.now - departure.updatedAt <= 180000 && departure.updatedAt <= this.now + 60000)).map(departure => {

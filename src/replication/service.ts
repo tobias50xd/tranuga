@@ -30,7 +30,7 @@ const optional = (value: Record<string, unknown>, key: string, type: 'number' | 
 const provenance = (value: Record<string, unknown>) => optional(value, 'snapshotAt', 'number') && (value.agreement === undefined || ['corroborated','single-source','conflict','stale-backup'].includes(String(value.agreement))) && (value.sources === undefined || arrayOf(value.sources, (ref): ref is {source:string;id:string;fetchedAt:number} => object(ref) && typeof ref.source === 'string' && typeof ref.id === 'string' && Number.isFinite(ref.fetchedAt) && optional(ref, 'cached', 'boolean')));
 const isStop = (value: unknown): value is Stop => object(value) && point(value) && typeof value.id === 'string' && typeof value.name === 'string' && provenance(value);
 const isRoute = (value: unknown): value is Route => object(value) && ['id', 'name', 'shortName', 'color', 'agencyId'].every(key => typeof value[key] === 'string') && typeof value.active === 'boolean' && (value.operator === undefined || ['uga','city','other'].includes(String(value.operator))) && (value.availability === undefined || ['current','published','unknown'].includes(String(value.availability))) && provenance(value);
-const isVehicle = (value: unknown): value is Vehicle => point(value) && object(value) && typeof value.id === 'string' && typeof value.routeId === 'string' && Number.isFinite(value.heading) && ['updatedAt','speed'].every(key => optional(value,key,'number')) && ['tripId','destination'].every(key => optional(value,key,'string')) && provenance(value);
+const isVehicle = (value: unknown): value is Vehicle => point(value) && object(value) && typeof value.id === 'string' && typeof value.routeId === 'string' && Number.isFinite(value.heading) && ['updatedAt','speed'].every(key => optional(value,key,'number')) && ['tripId','destination'].every(key => optional(value,key,'string')) && optional(value,'active','boolean') && provenance(value);
 const isDeparture = (value: unknown): value is Departure => object(value) && typeof value.stopId === 'string' && typeof value.routeId === 'string' && Number.isFinite(value.arrivalTime) && ['updatedAt','departureTime'].every(key => optional(value,key,'number')) && ['tripId','direction','vehicleId'].every(key => optional(value,key,'string')) && optional(value,'scheduled','boolean') && provenance(value);
 const isPattern = (value: unknown): value is RoutePattern => object(value) && ['id', 'routeId', 'direction'].every(key => typeof value[key] === 'string') && arrayOf(value.stops, isStop) && arrayOf(value.shape, point) && optional(value,'loop','boolean') && provenance(value) && (value.shapeSegments === undefined || arrayOf(value.shapeSegments, (part): part is Coordinate[] => arrayOf(part, point)));
 const isStrings = (value: unknown): value is string[] => arrayOf(value, (item): item is string => typeof item === 'string');
@@ -51,9 +51,11 @@ export class ReplicatedTransitService implements TransitProvider {
   private stopDirectory = new Map<string, Set<string>>();
   private lastNetwork?: Network;
   private resultMeta = new Map<string, { cached: boolean; at: number }>();
+  private vehicleQuorum: number;
   constructor(readonly agency: Agency, private sources: ReplicaSource[], private aliases: Crosswalk = { routes: [], stops: [], vehicles: [] }, private store = new SnapshotStore(), private now = Date.now, mode: 'replicas' | 'providers' = 'providers', private sourceDeadlineMs = 30000) {
     if (!sources.length || new Set(sources.map(source => source.id)).size !== sources.length) throw new Error('Replication requires distinct, configured sources.');
     this.client = sources[0].service.client;
+    this.vehicleQuorum = mode === 'replicas' ? Math.floor(sources.length / 2) + 1 : 1;
     this.report = { label: agency.name, mode, total: sources.length, healthy: 0, sources: [], agreements: 0, conflicts: 0, singleSource: 0, cached: 0 };
   }
   private recordHealth(source: ReplicaSource, operation: string, health: SourceHealth) {
@@ -135,7 +137,7 @@ export class ReplicatedTransitService implements TransitProvider {
     const existing = this.pending.get(key); if (existing) return existing as Promise<T>;
     const promise = invoke().finally(() => this.pending.delete(key)); this.pending.set(key, promise); return promise;
   }
-  private session() { return new MergeSession(this.aliases, this.now(), this.agency.id); }
+  private session() { return new MergeSession(this.aliases, this.now(), this.agency.id, this.vehicleQuorum); }
   private finish(session: MergeSession) { Object.assign(this.report, session.counts); }
   private warnings(input: Observation<unknown>[], session: MergeSession): string[] {
     const warnings: string[] = [];

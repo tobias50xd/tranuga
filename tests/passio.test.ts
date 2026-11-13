@@ -80,12 +80,26 @@ describe('Passio endpoints and real contracts', () => {
   });
   it('normalizes headings and bus IDs but does not invent absolute GPS update times', () => {
     const vehicles = normalizePassioVehicles(ohio.buses, '5842');
-    expect(vehicles).toHaveLength(3); expect(vehicles[0]).toMatchObject({ id:'19156', routeId:'66949', tripId:'989397' });
+    expect(vehicles).toHaveLength(3); expect(vehicles[0]).toMatchObject({ id:'19156', routeId:'66949', tripId:'989397', active:true });
     expect(vehicles.every(vehicle => vehicle.heading >= 0 && vehicle.heading < 360)).toBe(true);
     expect(vehicles.every(vehicle => vehicle.updatedAt === undefined)).toBe(true);
     const raw = structuredClone(ohio.buses) as Record<string, any>; raw.buses['449441'][0].outOfService = 1;
     expect(normalizePassioVehicles(raw, '5842')).toHaveLength(2);
     expect(normalizePassioVehicles(ohio.buses, '3994')).toEqual([]);
+  });
+  it('keeps one point per bus and prefers a current point over an outdated duplicate', () => {
+    const source = structuredClone(ohio.buses.buses['449441'][0]);
+    const raw = { buses: {
+      stale: [{ ...source, deviceId:1, latitude:'39.1', longitude:'-82.1', outdated:1 }],
+      current: [{ ...source, deviceId:2, latitude:'39.2', longitude:'-82.2', outdated:0 }],
+    } };
+    expect(normalizePassioVehicles(raw, '5842')).toEqual([
+      expect.objectContaining({ id:'19156', lat:39.2, lon:-82.2, active:true }),
+    ]);
+    delete raw.buses.current;
+    expect(normalizePassioVehicles(raw, '5842')).toEqual([
+      expect.objectContaining({ id:'19156', lat:39.1, lon:-82.1, active:false }),
+    ]);
   });
   it('converts ETA epoch seconds, keeps run identity and maps UGA group/direction explicitly', () => {
     const raw = normalizePassioDepartures(ohio.eta), group = normalizePassioDepartures(uga.eta, '3994');

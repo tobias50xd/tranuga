@@ -27,8 +27,15 @@ describe('replicated crawling and public last-good snapshots',()=>{
   it('continues with one healthy provider when two fail without inventing quorum',async()=>{
     const providers=[provider(),provider(),provider()];providers[0].getNetwork=fail;providers[2].getNetwork=fail;
     const service=replicated(providers),result=await service.getNetwork();
-    expect(result.patterns).toHaveLength(1);expect(result.routes[0].agreement).toBe('single-source');
+    expect(result.patterns).toHaveLength(1);expect(result.routes[0].agreement).toBe('single-source');expect(result.vehicles).toEqual([]);
     expect(service.report.healthy).toBe(1);expect(result.warnings.join(' ')).toContain('Backup data');
+  });
+  it('selects the concrete 2-of-3 vehicle location and omits the primary outlier',async()=>{
+    const providers=[provider(),provider(),provider()];
+    const locations=[33.97,33.9401,33.9402];
+    providers.forEach((source,index)=>{ source.getNetwork=vi.fn(async()=>({ ...structuredClone(network), vehicles:[{...structuredClone(network.vehicles[0]),lat:locations[index]}] })); });
+    const result=await replicated(providers).getNetwork();
+    expect(result.vehicles).toHaveLength(1);expect(result.vehicles[0]).toMatchObject({lat:33.9401,agreement:'corroborated'});
   });
   it('coalesces simultaneous full crawls instead of fanning out duplicate requests',async()=>{
     const providers=[provider(),provider()],service=replicated(providers);

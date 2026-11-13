@@ -31,7 +31,7 @@ Source health distinguishes responding, partly available, saved-backup and unava
 
 ## Selection and agreement
 
-For each canonical entity, a source contributes at most one vote. The merger searches **pairwise-compatible groups**: A agreeing with B and B with C does not imply A agrees with C. A compatible pair or triple takes precedence over an outlier. Without such a group, the configured preferred surviving source supplies an explicitly labeled single-source/conflicting fallback.
+For each canonical entity, a source contributes at most one vote. The merger searches **pairwise-compatible groups**: A agreeing with B and B with C does not imply A agrees with C. A compatible pair or triple takes precedence over an outlier. Without such a group, the configured preferred surviving source supplies an explicitly labeled single-source/conflicting fallback for catalog, topology and non-replicated provider data. Vehicle locations from a three-node Passio coordinator are stricter: fewer than two compatible fresh replica votes produces no marker.
 
 Fresh observations outrank saved values, including nested coordinator results that already came from saved data. For vehicles, actual fresh measurement times take precedence over unknown/stale measurement times; among fresh measurements the newer report is preferred, then configured priority. A cached majority cannot outvote a fresh survivor.
 
@@ -41,7 +41,7 @@ Selected coordinates, headings and timing remain a **concrete source observation
 | --- | --- |
 | Route current state | Explicit current-service reports decide current operation. InfoPoint visibility and Passio archive/outdated/map flags are publication metadata and abstain from voting against current-service reports. |
 | Stop position | Reviewed stop identity, at most 50 m between reports. Nearby unreviewed stops remain separate. |
-| Vehicle report | Same canonical fleet and route; at most 100 m position difference, at most 45° circular heading difference, and original measurement times within 60 seconds. A voting measurement must be no older than 120 seconds and no more than 60 seconds in the future. Unknown/stale/future measurements cannot create a quorum. |
+| Vehicle report | Same canonical fleet and route, with at most 100 m position difference. When both reports have absolute measurement times, those times must be within 60 seconds. A vote needs either an original measurement no older than 120 seconds and no more than 60 seconds in the future, or a fresh Passio record explicitly marked `outdated=0`. The Passio active flag authorizes location comparison only; without an absolute update time it cannot establish current service for planning. Heading disagreement does not split a location quorum; the selected concrete observation supplies the displayed heading. |
 | Arrival/boarding | Same canonical stop/route/direction and comparable run identity where available; arrival differences at most 90 seconds and departure/boarding differences at most 90 seconds. Known original prediction updates older than 180 seconds or more than 60 seconds in the future are excluded. |
 | Directed pattern | Entire ordered canonical stop sequence, with loop evidence treated separately. A shared stop set or spatially similar trace does not prove order. |
 | Loop closure | Unknown closure abstains. Known consistent evidence is preserved; two known opposing values without a majority mark the pattern disputed. An unknown third record cannot break that tie. |
@@ -53,6 +53,12 @@ A proved common trip ID identifies one run even if one replica's ETA is far outs
 Without comparable run identity, prediction matching must be unique in **both directions across the original source group**. Matching after an earlier ambiguous candidate was removed would manufacture agreement; those cases remain separate. Trip IDs from unrelated namespaces are not inferred to be equivalent. Scheduled times do not corroborate live predictions merely because their values are close. When a proved run includes both, actual nonscheduled reports drive the selected live value and the schedule disagreement remains visible; two agreeing live reports can still corroborate it.
 
 InfoPoint arrival ETA and departure EDT are separate. Passio's `scheduledDepartureUtc` is not a proven live departure/dwell field and is not promoted to `departureTime`. UTC/epoch prediction fields are parsed as documented; unqualified local bus clock labels do not become fabricated absolute measurements.
+
+### Vehicle identity, duplicate points and quorum
+
+Passio can retain an `outdated=1` row beside an `outdated=0` row for the same bus. Normalization reads every returned row, groups exact bus IDs, and retains the current row when one exists. Reconciliation repeats this rule after canonical cross-provider identity mapping, and the map keys markers only by canonical bus ID. Consequently a route reassignment or an outdated duplicate cannot produce a second marker for the same canonical bus.
+
+The three fixed Passio nodes are queried concurrently before their vehicle result is returned. At least two distinct nodes must report pairwise-compatible locations for a marker to leave that coordinator. A preferred-primary outlier loses to the compatible pair; three mutually incompatible locations, a lone response, cached-only data, or only outdated rows produce no Passio marker. The selected coordinate and heading still come from one agreeing response rather than an average.
 
 ### Publication is not operation
 
@@ -80,7 +86,7 @@ Snapshots contain normalized **public transit** resources. Local trip origins, d
 | Persistence cap | Serialized data at most 2,000,000 characters; this is a string-length cap, not a promise about encoded byte size. An oversized single entry is not persisted. |
 | Static snapshot age | At most 24 hours; newer data can evict earlier resources. |
 | Active/prediction fallback | Cached current-service flags and predictions cease to establish current planning after 2 minutes. |
-| Cached vehicle display | At most 5 minutes of saved-snapshot age; original measurement age still determines whether it could establish current service. |
+| Cached vehicle display | At most 5 minutes of saved-snapshot age for non-quorum provider views; three-node Passio vehicle output still requires a fresh two-replica quorum. Original measurement age still determines whether a position could establish current service. |
 | Invalid/full storage | Reject invalid/expired entries; continue with memory when persistence is unavailable. |
 
 Nested saved results propagate their original resource time and cached state. Selected records preserve `snapshotAt`; old data is not refreshed merely by recrawling a saved child result. Vehicle `updatedAt` and prediction `updatedAt` remain original measurement/update times, distinct from fetching and from snapshot age.

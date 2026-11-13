@@ -2,6 +2,7 @@ import type { Agency, Coordinate, Departure, Network, Route, RouteDetail, RouteP
 import { ApiClient } from './client';
 import { color, coordinate, decodePolyline, list, num, record, rows, text, timestamp, uniqueStops } from './normalize';
 import { passioEndpoints, PASSIO_ORIGINS } from './passio-endpoints';
+import { uniqueVehicles } from '../vehicle-selection';
 
 export { PASSIO_ORIGINS, passioEndpoints } from './passio-endpoints';
 export const PASSIO_ATHENS_AGENCY: Agency = { id: '5842', name: 'Athens Public Transit · Ohio', kind: 'passio', center: { lat: 39.33638, lon: -82.12585 } };
@@ -78,14 +79,20 @@ export function normalizePassioTopology(value: unknown, agencyId: string): Passi
 export function normalizePassioVehicles(value: unknown, agencyId: string): Vehicle[] {
   const data = responseObject(value, 'Passio vehicles');
   if (!data.buses || typeof data.buses !== 'object') throw new Error('Passio vehicles has an unsupported format.');
-  return Object.values(record(data.buses)).flatMap(value => {
-    const row = record(Array.isArray(value) ? value[0] : undefined), point = passioCoordinate(row), id = text(row.busId), routeId = text(row.routeId);
-    if (!point || !id || !routeId || text(row.userId) !== agencyId || text(row.outOfService) === '1') return [];
-    const heading = num(row.calculatedCourse) ?? num(row.course);
-    // The observed response has only a local 12h time without date/offset. Request time is not GPS time.
-    const updatedAt = utcTimestamp(row.updatedUtc) ?? timestamp(row.updatedAt) ?? timestamp(row.timestamp);
-    return [{ id, routeId, ...point, heading: heading === undefined ? 0 : ((heading % 360) + 360) % 360, updatedAt, destination: text(row.route, `Route ${routeId}`), tripId: text(row.tripId) || undefined }];
+  const vehicles = Object.values(record(data.buses)).flatMap(value => {
+    const candidates = Array.isArray(value) ? list(value) : Object.keys(record(value)).length ? [record(value)] : [];
+    return candidates.flatMap(row => {
+      const point = passioCoordinate(row), id = text(row.busId), routeId = text(row.routeId);
+      if (!point || !id || !routeId || text(row.userId) !== agencyId || text(row.outOfService) === '1') return [];
+      const heading = num(row.calculatedCourse) ?? num(row.course);
+      // The observed response has only a local 12h time without date/offset. Request time is not GPS time.
+      const updatedAt = utcTimestamp(row.updatedUtc) ?? timestamp(row.updatedAt) ?? timestamp(row.timestamp);
+      return [{ id, routeId, ...point, heading: heading === undefined ? 0 : ((heading % 360) + 360) % 360, updatedAt, active: text(row.outdated, '0') !== '1', destination: text(row.route, `Route ${routeId}`), tripId: text(row.tripId) || undefined }];
+    });
   });
+  // A feed can retain an outdated point beside the current point for one bus.
+  // Keep the current point, or one outdated fallback when no current point exists.
+  return uniqueVehicles(vehicles);
 }
 function utcTimestamp(value: unknown): number | undefined {
   if (typeof value !== 'string') return undefined;

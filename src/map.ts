@@ -6,6 +6,7 @@ import { escapeHtml as e, safeColor, vehicleAge, headingLabel } from './ui';
 import { ATHENS_BOUNDS, inAthens } from './athens';
 import { rideGeometry, journeyTransfers } from './journey-map';
 import { VehicleMotion } from './vehicle-motion';
+import { uniqueVehicles } from './vehicle-selection';
 interface BusMarker { marker: L.Marker; motion: VehicleMotion }
 
 export class TransitMap {
@@ -74,9 +75,9 @@ export class TransitMap {
 
   private syncVehicles(vehicles: Vehicle[], color: (bus: Vehicle) => string, name: (bus: Vehicle) => string | undefined = () => undefined) {
     const now=Date.now(), present=new Set<string>();
-    for (const bus of vehicles) {
+    for (const bus of uniqueVehicles(vehicles)) {
       if (this.athensLocked && !inAthens(bus)) continue;
-      const key=JSON.stringify([bus.routeId,bus.id]); present.add(key);
+      const key=bus.id; present.add(key);
       let state=this.busMarkers.get(key);
       if (!state) {
         state={marker:L.marker([bus.lat,bus.lon],{icon:L.divIcon({className:'bus-marker',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(this.vehicles),motion:new VehicleMotion(bus)};

@@ -160,6 +160,33 @@ describe('vehicle identity, position and freshness agreement', () => {
     // A-B and B-C are within100m; A-C are not. The disagreement remains visible.
     expect(merger.counts.conflicts).toBe(1);
   });
+  it('uses active timestamp-less Passio markers for a strict 2-of-3 location decision', () => {
+    const merger = new MergeSession(undefined, NOW, 'test', 2);
+    const result = merger.vehicles([
+      observe(A, [vehicle({ lat:33.97, heading:180, updatedAt:undefined, active:true })]),
+      observe(B, [vehicle({ lat:33.9501, heading:5, updatedAt:undefined, active:true })]),
+      observe(C, [vehicle({ lat:33.9502, heading:220, updatedAt:undefined, active:true })]),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ lat:33.9501, active:true, agreement:'corroborated' });
+    expect(merger.counts.conflicts).toBe(1);
+  });
+  it('omits a replica marker when no location reaches the configured majority', () => {
+    const merger = new MergeSession(undefined, NOW, 'test', 2);
+    expect(merger.vehicles([
+      observe(A, [vehicle({ lat:33.95, updatedAt:undefined, active:true })]),
+      observe(B, [vehicle({ lat:33.97, updatedAt:undefined, active:true })]),
+      observe(C, [vehicle({ lat:33.99, updatedAt:undefined, active:true })]),
+    ])).toEqual([]);
+    expect(merger.counts.conflicts).toBe(1);
+  });
+  it('collapses current and outdated rows for one bus and keeps the current marker', () => {
+    const [result] = session().vehicles([observe(A, [
+      vehicle({ routeId:'old', lat:33.97, active:false }),
+      vehicle({ routeId:'1', lat:33.95, active:true }),
+    ])]);
+    expect(result).toMatchObject({ id:'v', routeId:'1', lat:33.95, active:true });
+  });
   it.each([
     ['unknown', undefined], ['stale', NOW - 120_001], ['future', NOW + 60_001],
   ] as const)('does not allow %s measurement times to vote', (_name, updatedAt) => {
