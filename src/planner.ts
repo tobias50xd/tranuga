@@ -1,4 +1,4 @@
-import type { Coordinate, Departure, Network, RoutePattern, Stop } from './types';
+import type { Coordinate, Departure, Network, RoutePattern, Stop, Vehicle } from './types';
 
 export interface PlannerOptions {
   /** Epoch milliseconds; defaults to the time at which planning starts. */
@@ -18,12 +18,13 @@ export interface PlannerOptions {
 export interface JourneyPlace extends Coordinate { name: string; stopId?: string }
 interface BaseLeg { from: JourneyPlace; to: JourneyPlace; startTime: number; endTime: number }
 export interface WalkLeg extends BaseLeg { kind: 'walk'; distanceMeters: number }
-export interface WaitLeg extends BaseLeg { kind: 'wait'; source: 'live' | 'estimated' }
+export type TimingSource = 'live' | 'vehicle' | 'estimated';
+export interface WaitLeg extends BaseLeg { kind: 'wait'; source: TimingSource }
 export interface RideLeg extends BaseLeg {
   kind: 'ride'; routeId: string; routeName: string; direction: string;
   stops: Stop[];
   /** Describes the boarding prediction; intermediate travel may be estimated. */
-  source: 'live' | 'estimated';
+  source: TimingSource;
 }
 export type JourneyLeg = WalkLeg | WaitLeg | RideLeg;
 export interface Journey {
@@ -155,6 +156,47 @@ function boardingTime(departure: Departure): number {
     ? departure.departureTime! : departure.arrivalTime;
 }
 
+function segmentProjection(point: Coordinate, a: Coordinate, b: Coordinate): { ratio: number; away: number } {
+  const cos = Math.max(0.00001, Math.cos(radians(point.lat)));
+  const ax = radians(a.lon - point.lon) * RADIUS * cos, ay = radians(a.lat - point.lat) * RADIUS;
+  const bx = radians(b.lon - point.lon) * RADIUS * cos, by = radians(b.lat - point.lat) * RADIUS;
+  const dx = bx - ax, dy = by - ay;
+  const ratio = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+  return { ratio, away: Math.hypot(ax + ratio * dx, ay + ratio * dy) };
+}
+
+/**
+ * Estimate when a recently observed bus can reach a boarding stop. This is a
+ * fallback for feeds without an ETA at that stop, not a replacement for a
+ * provider prediction. The vehicle must lie close to the directed stop chain;
+ * a bus that has already passed a stop is ignored unless the route is a loop.
+ */
+function vehicleBoardingTime(prepared: PreparedPattern, stopAt: number, vehicles: Vehicle[], now: number, maxAgeSeconds: number): number | undefined {
+  let earliest = Infinity;
+  const { stops, segmentSeconds, loop } = prepared, segmentCount = loop ? stops.length : stops.length - 1;
+  for (const vehicle of vehicles) {
+    if (vehicle.routeId !== prepared.pattern.routeId || vehicle.updatedAt === undefined
+      || now - vehicle.updatedAt > maxAgeSeconds * 1000 || vehicle.updatedAt > now + 60_000) continue;
+    if (distanceMeters(vehicle, stops[stopAt]) <= 75) { earliest = Math.min(earliest, now); continue; }
+    let nearest: { at: number; ratio: number; away: number } | undefined;
+    for (let at = 0; at < segmentCount; at++) {
+      const projected = segmentProjection(vehicle, stops[at], stops[(at + 1) % stops.length]);
+      if (!nearest || projected.away < nearest.away) nearest = { at, ...projected };
+    }
+    // Stop-to-stop chords are only a direction test. Reject vehicles far from
+    // them so a nearby bus on another street cannot create a phantom arrival.
+    if (!nearest || nearest.away > 600 || !loop && nearest.at >= stopAt) continue;
+    let seconds = segmentSeconds[nearest.at] * (1 - nearest.ratio);
+    let at = (nearest.at + 1) % stops.length, guard = 0;
+    while (at !== stopAt && guard++ < stops.length) {
+      if (!loop && at >= stops.length - 1) { seconds = Infinity; break; }
+      seconds += segmentSeconds[at]; at = (at + 1) % stops.length;
+    }
+    if (Number.isFinite(seconds)) earliest = Math.min(earliest, now + seconds * 1000);
+  }
+  return Number.isFinite(earliest) ? earliest : undefined;
+}
+
 /**
  * Preserve known run arrival anchors. Interpolate unknown intermediate times
  * between anchors instead of discarding a valid downstream ETA just because an
@@ -208,7 +250,14 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
     || !config.walkingSpeedMps || !config.busSpeedMps || !config.horizonSeconds) {
     return { status: 'unavailable', reason: 'Journey settings must contain valid positive speeds and a planning horizon.' };
   }
-  const active = new Map(network.routes.filter(route => route.active).map(route => [route.id, route]));
+  const freshMeasurement = (updatedAt: number | undefined) => updatedAt !== undefined && Number.isFinite(updatedAt)
+    && config.now - updatedAt <= config.maxRealtimeAgeSeconds * 1000 && updatedAt <= config.now + 60_000;
+  const evidencedRoutes = new Set([
+    ...network.vehicles.filter(vehicle => freshMeasurement(vehicle.updatedAt)).map(vehicle => vehicle.routeId),
+    ...network.departures.filter(departure => !departure.scheduled && freshMeasurement(departure.updatedAt)
+      && boardingTime(departure) >= config.now && boardingTime(departure) <= config.now + config.horizonSeconds * 1000).map(departure => departure.routeId),
+  ]);
+  const active = new Map(network.routes.filter(route => route.active || evidencedRoutes.has(route.id)).map(route => [route.id, route]));
   const patterns = network.patterns.filter(pattern => active.has(pattern.routeId))
     .map(pattern => preparePattern(pattern, config.busSpeedMps, config.dwellSeconds))
     .filter((pattern): pattern is PreparedPattern => !!pattern);
@@ -243,6 +292,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
   const predictions = (stopId: string, pattern: RoutePattern) => (departures.get(JSON.stringify([stopId, pattern.routeId])) ?? [])
     .filter(departure => departure.direction === pattern.direction
       || (departure.direction === undefined && directions.get(pattern.routeId)!.size === 1));
+  const vehicles = fresh ? network.vehicles.filter(vehicle => freshMeasurement(vehicle.updatedAt)) : [];
 
   const heap = new Heap(), labels = new Map<number, Label[]>();
   const offer = (label: Label) => {
@@ -300,8 +350,12 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
       // Estimated service follows the latest known departure, never jumps ahead
       // of it. Include it alongside known runs: this makes every edge FIFO even
       // if a predicted bus is slower than a following estimated run.
-      const candidates: { start: number; prediction?: Departure }[] = live.map(prediction => ({ start: boardingTime(prediction), prediction }));
-      candidates.push({ start: Math.max(ready, known.length ? boardingTime(known.at(-1)!) : ready) + config.estimatedWaitSeconds * 1000 });
+      const candidates: { start: number; prediction?: Departure; source: TimingSource }[] = live.map(prediction => ({
+        start: boardingTime(prediction), prediction, source: prediction.scheduled ? 'estimated' : 'live',
+      }));
+      const vehicleTime = vehicleBoardingTime(prepared, at, vehicles, config.now, config.maxRealtimeAgeSeconds);
+      if (vehicleTime !== undefined && vehicleTime >= ready) candidates.push({ start: vehicleTime, source: 'vehicle' });
+      candidates.push({ start: Math.max(ready, known.length ? boardingTime(known.at(-1)!) : ready) + config.estimatedWaitSeconds * 1000, source: 'estimated' });
       const count = prepared.loop ? prepared.stops.length - 1 : prepared.stops.length - at - 1;
       const ridden = Array.from({ length: count + 1 }, (_, step) => prepared.stops[(at + step) % prepared.stops.length]);
       const seconds = Array.from({ length: count }, (_, step) => prepared.segmentSeconds[(at + step) % prepared.stops.length]);
@@ -312,7 +366,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
           if (arrival > deadline || labels.get(key)?.some(existing => dominates(existing, {
             time: arrival, boardings: current.boardings + 1, walking: current.walking,
           }))) continue;
-          const source = candidate.prediction && !candidate.prediction.scheduled ? 'live' : 'estimated';
+          const source = candidate.source;
           const legs: JourneyLeg[] = [];
           if (candidate.start > current.time) legs.push({ kind: 'wait', from: place(stop), to: place(stop), startTime: current.time, endTime: candidate.start, source });
           legs.push({ kind: 'ride', routeId: pattern.routeId, routeName: active.get(pattern.routeId)!.name, direction: pattern.direction,
@@ -327,7 +381,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
   for (let label: Label | undefined = best.label; label; label = label.previous) sections.push(label.legs);
   const legs = sections.reverse().flat();
   if (best.finalLeg) legs.push(best.finalLeg);
-  const liveAssisted = legs.some(leg => leg.kind === 'ride' && leg.source === 'live');
+  const liveAssisted = legs.some(leg => leg.kind === 'ride' && leg.source !== 'estimated');
   return { status: 'ok', journey: {
     departureTime: config.now, arrivalTime: best.time, durationSeconds: (best.time - config.now) / 1000,
     walkingMeters: best.walking, transfers: Math.max(0, best.label.boardings - 1), legs,
@@ -337,6 +391,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
       `Walks use straight-line distances at ${config.walkingSpeedMps} m/s; verify safe, accessible paths on the ground.`,
       `Unpublished repeating service is estimated ${Math.round(config.estimatedWaitSeconds / 60 * 10) / 10} minutes after you are ready or after the last known departure, whichever is later.`,
       `Unpredicted bus travel uses route geometry where consistent, otherwise stop distances × 1.25, at ${config.busSpeedMps} m/s plus ${config.dwellSeconds} seconds per stop.`,
+      'When a stop ETA is missing, a recent vehicle position on the directed route can estimate its boarding time; provider ETAs take precedence when faster.',
       `Transfers include ${config.transferBufferSeconds} seconds to change buses. Predictions older than ${config.maxRealtimeAgeSeconds} seconds are ignored.`,
     ],
   } };

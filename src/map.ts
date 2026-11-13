@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Coordinate, RouteDetail, Stop, Vehicle } from './types';
+import type { Coordinate, Network, RouteDetail, Stop, Vehicle } from './types';
 import type { Journey } from './planner';
 import { escapeHtml as e, safeColor, vehicleAge, headingLabel } from './ui';
 
@@ -47,13 +47,15 @@ export class TransitMap {
 
   showVehicles(vehicles: Vehicle[], color: string) {
     this.vehicles.clearLayers();
-    for (const bus of vehicles) {
-      const stale = !bus.updatedAt || Date.now() - bus.updatedAt > 120000;
-      const icon = L.divIcon({ className: 'bus-marker', html: `<span class="bus-pointer ${stale ? 'stale' : ''}" style="--bus-color:${safeColor(color)};--heading:${Number.isFinite(bus.heading) ? bus.heading : 0}deg"><span>↑</span></span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
-      L.marker([bus.lat, bus.lon], { icon, title: `Bus ${bus.id}, ${headingLabel(bus.heading)}` })
-        .bindPopup(`<strong>Bus ${e(bus.id)}</strong><br>${e(bus.destination || '')}<br>Heading ${e(headingLabel(bus.heading))} · ${Math.round(bus.heading)}°<br>${e(vehicleAge(bus.updatedAt))}${stale ? '<br>Last known position — may be stale' : ''}`)
-        .addTo(this.vehicles);
-    }
+    for (const bus of vehicles) this.addVehicle(bus, color);
+  }
+
+  private addVehicle(bus: Vehicle, color: string, routeName?: string) {
+    const stale = !bus.updatedAt || Date.now() - bus.updatedAt > 120000;
+    const icon = L.divIcon({ className: 'bus-marker', html: `<span class="bus-pointer ${stale ? 'stale' : ''}" style="--bus-color:${safeColor(color)};--heading:${Number.isFinite(bus.heading) ? bus.heading : 0}deg"><span>↑</span></span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+    L.marker([bus.lat, bus.lon], { icon, title: `Bus ${bus.id}, ${headingLabel(bus.heading)}` })
+      .bindPopup(`<strong>Bus ${e(bus.id)}</strong>${routeName ? `<br>${e(routeName)}` : ''}<br>${e(bus.destination || '')}<br>Heading ${e(headingLabel(bus.heading))} · ${Math.round(bus.heading)}°<br>${e(vehicleAge(bus.updatedAt))}${stale ? '<br>Last known position — may be stale' : ''}`)
+      .addTo(this.vehicles);
   }
 
   showPoints(origin?: Coordinate, destination?: Coordinate) {
@@ -63,18 +65,44 @@ export class TransitMap {
     }
   }
 
-  showJourney(journey: Journey, routeColors: Map<string, string>) {
+  showJourney(journey: Journey, network: Network) {
     this.journey.clearLayers(); this.routes.clearLayers(); this.stops.clearLayers(); this.vehicles.clearLayers();
+    const routeById = new Map(network.routes.map(route => [route.id, route]));
+    const rides = journey.legs.filter(leg => leg.kind === 'ride');
+    const usedRouteIds = new Set(rides.map(leg => leg.routeId));
+    const shownPatterns = new Set<string>(), drawnRideKeys = new Set<string>();
+    for (const ride of rides) {
+      const route = routeById.get(ride.routeId), color = safeColor(route?.color ?? '#b92535');
+      for (const pattern of network.patterns.filter(candidate => candidate.routeId === ride.routeId && candidate.direction === ride.direction)) {
+        if (shownPatterns.has(pattern.id)) continue;
+        shownPatterns.add(pattern.id);
+        const lines = pattern.shapeSegments?.length ? pattern.shapeSegments : [pattern.shape.length > 1 ? pattern.shape : pattern.stops];
+        for (const line of lines) if (line.length > 1) {
+          L.polyline(line.map(point => [point.lat, point.lon]), {
+            color, weight: 6, opacity: .72, dashArray: pattern.shape.length > 1 || pattern.shapeSegments?.length ? undefined : '7,8',
+          }).bindTooltip(e(route?.name ?? ride.routeName)).addTo(this.routes);
+          drawnRideKeys.add(`${ride.routeId}\0${ride.direction}`);
+        }
+      }
+      for (const stop of [ride.stops[0], ride.stops.at(-1)]) if (stop) {
+        L.circleMarker([stop.lat, stop.lon], { radius: 5, color, weight: 3, fillColor: '#fff', fillOpacity: 1 })
+          .bindTooltip(e(stop.name)).addTo(this.stops);
+      }
+    }
     for (const leg of journey.legs) {
       if (leg.kind === 'wait') continue;
+      if (leg.kind === 'ride' && drawnRideKeys.has(`${leg.routeId}\0${leg.direction}`)) continue;
       const points = leg.kind === 'ride' ? leg.stops : [leg.from, leg.to];
       L.polyline(points.map(point => [point.lat, point.lon]), {
-        color: leg.kind === 'ride' ? safeColor(routeColors.get(leg.routeId) ?? '#b92535') : '#52625a',
+        color: leg.kind === 'ride' ? safeColor(routeById.get(leg.routeId)?.color ?? '#b92535') : '#52625a',
         weight: leg.kind === 'ride' ? 6 : 3,
         dashArray: leg.kind === 'walk' ? '5,7' : undefined,
       }).addTo(this.journey);
     }
-    const bounds = this.journey.getBounds();
+    for (const bus of network.vehicles.filter(vehicle => usedRouteIds.has(vehicle.routeId))) {
+      const route = routeById.get(bus.routeId); this.addVehicle(bus, route?.color ?? '#b92535', route?.name);
+    }
+    const bounds = this.routes.getBounds().extend(this.journey.getBounds()).extend(this.stops.getBounds()).extend(this.vehicles.getBounds());
     if (bounds.isValid()) this.map.fitBounds(bounds.pad(.15), { maxZoom: 17, animate: false });
   }
 

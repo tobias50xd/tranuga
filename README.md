@@ -5,12 +5,25 @@ A static bus explorer and quickest-trip estimator, deployed with GitHub Actions 
 ## Use the app
 
 - **Routes:** browse every returned route with active service first and a light green tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
-- **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions.
+- **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Every bus line used is listed with its direction and reported bus count; its supplied route trace and current bus markers are drawn on the result map.
 - **Data reliability:** inspect responding sources, disagreements and saved-backup state. **Sync all sources** crawls the selected network's full route/stop/prediction data. One responding source can provide a labeled fallback; compatible reports from two replicas take precedence over an outlier.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
 - **Networks:** use the combined Georgia network, UGA's Passio network, the requested Athens Public Transit network in Ohio, or a reviewed InfoPoint agency. Search the directory, locate a nearby agency, or enter an authority code.
 
 All clock times use the device timezone except provider timetable clock labels, which retain the operator's stated IANA timezone. Missing dates, route identities and durations remain unknown rather than being invented.
+
+### Application URLs
+
+The app uses browser-history routes and Cloudflare's single-page-app fallback, so these paths can be opened, refreshed and shared directly:
+
+| Path | View |
+| --- | --- |
+| `/routes` | Route catalog |
+| `/routes/{routeId}` | One route, its stops, trace and current buses |
+| `/plan` | Trip planner |
+| `/networks` | Network selector |
+
+Opening `/` replaces the address with `/routes`. Back/forward navigation restores the corresponding view without a full page reload.
 
 ## Networks, replicas and identity
 
@@ -244,14 +257,21 @@ The source bar reports health and corroborated/single-source/conflict/saved-back
 | Saved live eligibility | Cached active flags/predictions expire after 2 min; cached positions can remain visible for at most 5 min; original measurement age still controls current-service eligibility. Original measurement times and selected `snapshotAt` survive nested replication. Static retention does not authorize stale service. |
 | Visible-tab lightweight crawl | Every 60 s: catalogs, vehicles and alerts. Hidden tabs and overlapping crawls are skipped. |
 | Open-route positions | Every 15 s while visible; overlapping polls are skipped. |
-| Full network crawl | **Sync all sources** or planning; Each adapter caps UGA tracking/InfoPoint departures or Passio ETA batches at four concurrent requests; each Passio batch has at most 40 stops. The three mirror adapters run concurrently. |
+| Full network crawl | **Sync all sources** or planning; the adapter first loads the complete route catalog and ordered topology for every returned route, then fetches current vehicles and batched stop predictions. UGA tracking/InfoPoint departures and Passio ETA batches are capped at four concurrent requests; each Passio batch has at most 40 stops. The three mirror adapters run concurrently. |
 | Edge response cache | Most live reads 10 s; Passio catalog 60 s; static/config/directory/topology/KML/provider metadata/timetable 1 h. Full per-layer policy is in [feature.md](feature.md). |
 
 There is no server cron or crawl while the browser is closed. Local trip planning runs on the device. **Request provider comparison** explicitly forwards the two selected points to Passio; that request bypasses client/edge caches and localStorage snapshots, and coordinate bodies are not written to the request log. Geolocation otherwise runs only after the user requests it; nearby-network lookup also explicitly forwards a coordinate to discovery. No account, analytics SDK or continuous location tracking is implemented. Public map tiles still make ordinary requests to OpenStreetMap.
 
 ## How quickest-trip estimation works
 
-[src/planner.ts](src/planner.ts) runs a time-dependent earliest-arrival search with a binary heap and nondominated arrival/transfer/walking labels. It considers **all** reachable boarding and alighting stops, directed rides, same-stop/walking transfers, catchable predicted runs and modeled following service. It requires at least one bus ride. Remaining on a bus does not add a second boarding wait; confirmed loops can wrap once. Disputed topology and unconfirmed current service cannot supply planning edges.
+[src/planner.ts](src/planner.ts) runs a time-dependent earliest-arrival search with a binary heap and nondominated arrival/transfer/walking labels. Planning follows this sequence:
+
+1. Query the complete route catalog and retain every usable directed stop pattern instead of preselecting a single line.
+2. Build the connection graph from ordered stops. Routes connect directly at the same canonical stop; an optional transfer edge may walk up to 300 m between distinct nearby stops.
+3. Limit usable edges to current service. Catalog-active lines qualify directly; a line with a stale catalog flag may qualify from a fresh vehicle or a fresh nonscheduled ETA. Saved/stale observations do not establish service.
+4. Rank every reachable one-line and multi-line journey by arrival time. Stop ETAs/EDTs provide run anchors. When an ETA is absent, a bus observed within 600 m of the directed stop chain can estimate when it reaches the boarding stop; buses that already passed a non-loop stop are ignored. The declared 7.5-minute service estimate remains the final fallback.
+
+The search considers **all** reachable boarding and alighting stops, directed rides, same-stop/walking transfers, catchable predicted runs, recent vehicle positions and modeled following service. It requires at least one bus ride. Remaining on a bus does not add a second boarding wait; confirmed loops can wrap once. Conflicting topology and unconfirmed current service cannot supply planning edges. When a current route-stop request fails, a verified ordered static pattern can still supply topology, but its timing remains explicitly estimated or vehicle-assisted.
 
 | Parameter | Default |
 | --- | --- |
@@ -263,9 +283,9 @@ There is no server cron or crawl while the browser is closed. Local trip plannin
 | Transfer buffer | 45 s |
 | Prediction age / search horizon | 180 s / 3 h |
 
-Consistent route geometry estimates bus distance; otherwise stop distances are multiplied by 1.25. Actual run identity can anchor downstream arrivals and intermediate dwell. UGA stop prediction arrays do not identify every run, so matching array positions never prove the same bus. Expired/impossible predictions, old original update times and stale network snapshots are ignored. Tests compare the search with an independent exhaustive-path oracle on 40 generated networks.
+Consistent route geometry estimates bus distance; otherwise stop distances are multiplied by 1.25. Actual run identity can anchor downstream arrivals and intermediate dwell. UGA stop prediction arrays do not identify every run, so matching array positions never prove the same bus. Expired/impossible predictions, old original update times, stale vehicle positions and stale network snapshots are ignored. Tests compare the search with an independent exhaustive-path oracle on 40 generated networks and separately cover vehicle-position timing.
 
-The result is **quickest within this declared model**, with `estimated` or `live-assisted` confidence and visible assumptions. The feeds do not provide complete guaranteed timetables, a pedestrian street graph or accessible-path data. Provider timetable labels do not supply dates. Operator journey comparisons are separate suggestions, use only explicit numeric timing, exclude driving alternatives and do not become a quorum proof of the local algorithm. Walking lines and journey stop connectors are schematic; route-detail maps show supplied road traces/segments.
+The result is **quickest within this declared model**, with `estimated` or `live-assisted` confidence and visible assumptions. The feeds do not provide complete guaranteed timetables, a pedestrian street graph or accessible-path data. Provider timetable labels do not supply dates. Operator journey comparisons are separate suggestions, use only explicit numeric timing, exclude driving alternatives and do not become a quorum proof of the local algorithm. The result map draws every selected line using supplied road traces/segments, falls back to dashed ordered-stop connectors when geometry is missing, overlays currently reported buses for those lines, and shows walking as dashed straight-line estimates.
 
 ## Tests and verification
 
@@ -298,7 +318,7 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
 ```
 
-The November 13 UI refactor acceptance run passed **385 deterministic tests and 50 browser tests**, plus TypeScript, production build and Wrangler dry run. It used an isolated checkout to preserve concurrent planner edits in the shared workspace. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
+The latest November 13 acceptance run passed **386 deterministic tests and 52 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
 
 ## Source map and maintenance
 

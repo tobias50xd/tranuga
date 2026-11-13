@@ -122,7 +122,7 @@ export class TransitService {
     return { stop, departures };
   }
   async getNetwork(): Promise<Network> {
-    const routes = await this.listRoutes(), active = routes.filter(r => r.active), warnings: string[] = [];
+    const routes = await this.listRoutes(), warnings: string[] = [];
     const [vehicles, publicMessages] = await Promise.all([
       this.refreshVehicles().catch(error => { warnings.push(`Live vehicles unavailable: ${failure(error)}`); return []; }),
       this.getMessages().catch(error => { warnings.push(`Service notices unavailable: ${failure(error)}`); return []; }),
@@ -130,25 +130,36 @@ export class TransitService {
     let patterns: RoutePattern[] = [], departures: Departure[] = [];
     if (this.agency.kind === 'uga') {
       const topology = await this.staticNetwork().catch(error => { warnings.push(`Static topology unavailable; loop connections and road traces may be missing: ${failure(error)}`); return { stops: [], patterns: [], shapes: new Map<string, Coordinate[]>() }; });
-      const tracking = await concurrent(active, async route => {
+      // Load every catalog route before the planner builds its graph. Current
+      // service evidence is applied later; filtering here can hide a valid
+      // transfer or a bus whose catalog flag has not caught up yet.
+      const tracking = await concurrent(routes, async route => {
         const raw = await this.client.get(ugaEndpoints.tracking(route.id));
         return { routeId: route.id, patterns: ugaTrackingPatterns(raw, route.id, topology), departures: ugaDepartures(raw) };
       });
       tracking.forEach((result, i) => {
-        if (result.status === 'fulfilled') { patterns.push(...result.value.patterns); departures.push(...result.value.departures); if (!result.value.patterns.length) warnings.push(`No current stops supplied for ${active[i].name}.`); }
-        else { warnings.push(`Current stops unavailable for ${active[i].name}; this route is excluded from planning.`); }
+        const route = routes[i], staticPatterns = topology.patterns.filter(pattern => pattern.routeId === route.id);
+        if (result.status === 'fulfilled') {
+          patterns.push(...(result.value.patterns.length ? result.value.patterns : staticPatterns));
+          departures.push(...result.value.departures);
+          if (!result.value.patterns.length && staticPatterns.length) warnings.push(`Current stops unavailable for ${route.name}; verified static stop order is used with live vehicles and estimated timing.`);
+          else if (!result.value.patterns.length) warnings.push(`Ordered stops unavailable for ${route.name}; this route cannot supply a planning edge.`);
+        } else if (staticPatterns.length) {
+          patterns.push(...staticPatterns);
+          warnings.push(`Current stops unavailable for ${route.name}; verified static stop order is used with live vehicles and estimated timing.`);
+        } else warnings.push(`Ordered stops unavailable for ${route.name}; this route cannot supply a planning edge.`);
       });
     } else {
       const e = infoEndpoints(this.agency.restUrl!);
       const [allDetails, allStops] = await Promise.all([this.client.get(e.allDetails, 300000), this.client.get(e.stops, 300000)]);
-      const stops = normalizeStops(allStops), activeIds = new Set(active.map(r => r.id));
-      patterns = rows(allDetails, 'Route network').filter(row => activeIds.has(text(row.RouteId))).flatMap(row => infoPatterns(row, stops));
+      const stops = normalizeStops(allStops);
+      patterns = rows(allDetails, 'Route network').flatMap(row => infoPatterns(row, stops));
       const served = uniqueStops(patterns); served.forEach(s => this.cachedStops.set(s.id, s));
       const results = await concurrent(served, async stop => infoDepartures(await this.client.get(e.departures(stop.id), 15000)));
       results.forEach((result, i) => { if (result.status === 'fulfilled') { departures.push(...result.value); this.recentDepartures.set(served[i].id, result.value); } });
       const failed = results.filter(r => r.status === 'rejected').length;
       if (failed) warnings.push(`Predictions unavailable at ${failed} stops; those legs use estimated wait times.`);
-      const missing = active.filter(r => !patterns.some(p => p.routeId === r.id));
+      const missing = routes.filter(r => !patterns.some(p => p.routeId === r.id));
       if (missing.length) warnings.push(`Ordered stop data unavailable for ${missing.map(r => r.shortName).join(', ')}; these routes are excluded from planning.`);
     }
     const stops = uniqueStops(patterns); stops.forEach(s => this.cachedStops.set(s.id, s));

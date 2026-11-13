@@ -76,6 +76,7 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
 test('first page lists every route, searches, filters and refreshes', async ({ page }) => {
   const { calls } = await mockTransit(page);
   await page.goto('/');
+  await expect(page).toHaveURL(/\/routes$/);
   await expect(page.locator('.route-card')).toHaveCount(2);
   await expect(page.locator('#route-count')).toContainText('2 routes · 1 active');
   await expect(page.locator('.route-card').first()).toHaveClass(/route-active/);
@@ -94,6 +95,7 @@ test('first page lists every route, searches, filters and refreshes', async ({ p
 test('selected route shows geometry, current stops, bus heading, arrivals and direction selector', async ({ page }) => {
   const { calls } = await mockTransit(page);
   await page.goto('/'); await page.locator('[data-route="5750"]').click();
+  await expect(page).toHaveURL(/\/routes\/5750$/);
   await expect(page.locator('.stop-list li')).toHaveCount(19);
   await expect(page.locator('.bus-marker')).toHaveCount(1);
   await expect(page.locator('.leaflet-overlay-pane path').first()).toBeVisible();
@@ -137,6 +139,7 @@ test('no vehicles renders a clear service state', async ({ page }) => {
 test('plans a real directed bus connection between arbitrary coordinates', async ({ page }) => {
   const { data, calls } = await mockTransit(page);
   await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
+  await expect(page).toHaveURL(/\/plan$/);
   const stops = data.ugaTracking;
   const from = stops[0].stop, to = stops[8].stop;
   await page.getByRole('combobox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
@@ -144,6 +147,8 @@ test('plans a real directed bus connection between arbitrary coordinates', async
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.locator('.trip-summary')).toContainText('QUICKEST ESTIMATED CONNECTION');
   await expect(page.locator('.journey-leg.ride')).not.toHaveCount(0);
+  await expect(page.locator('.trip-lines li')).not.toHaveCount(0);
+  await expect(page.locator('.bus-marker')).not.toHaveCount(0);
   await expect(page.locator('.assumptions')).toBeVisible();
   await expect(page.locator('.leaflet-overlay-pane path').first()).toBeVisible();
   expect(calls.some(url => url.includes('routeTracking_5750'))).toBe(true);
@@ -187,15 +192,28 @@ test('validates coordinates and reports unreachable destinations', async ({ page
   await expect(page.locator('#trip-result')).toContainText('No bus connection found');
 });
 
-test('failed live topology is excluded from planning and static map fallback is labeled', async ({ page }) => {
+test('failed live topology retains verified static stop order for planning', async ({ page }) => {
   await mockTransit(page, { failTracking: true });
   await page.goto('/'); await page.locator('[data-route="5750"]').click();
   await expect(page.locator('#route-warnings')).toContainText('Showing static stops');
   await page.locator('nav [data-nav="plan"]').click();
   await page.getByRole('combobox', { name: 'Start', exact: true }).fill('33.948,-83.377'); await page.getByRole('combobox', { name: 'Destination', exact: true }).fill('33.95,-83.38');
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
-  await expect(page.locator('#trip-status')).toContainText('excluded from planning');
-  await expect(page.locator('#trip-result')).toContainText('No bus connection found');
+  await expect(page.locator('#trip-status')).toContainText('verified static stop order');
+  await expect(page.locator('.trip-summary')).toBeVisible();
+});
+
+test('plan and route views support direct URLs and browser history', async ({ page }) => {
+  await mockTransit(page);
+  await page.goto('/plan');
+  await expect(page.locator('#trip-map')).toBeVisible();
+  await expect(page.locator('nav [data-nav="plan"]')).toHaveAttribute('aria-current', 'page');
+  await page.locator('nav [data-nav="routes"]').click();
+  await page.locator('[data-route="5750"]').click();
+  await expect(page).toHaveURL(/\/routes\/5750$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/routes$/);
+  await expect(page.locator('.route-card')).toHaveCount(2);
 });
 
 test('authority discovery, nearby and code lookup lead to InfoPoint maps and service alerts', async ({ page, context }) => {

@@ -35,4 +35,12 @@ footer{display:block}.footer-main{display:flex;align-items:center;gap:12px 25px;
 @media(max-width:1000px){.footer-main>span:last-child{margin-left:0;width:100%}}
 @media(max-width:680px){.note{padding:13px;gap:10px}.footer-main{gap:10px 20px}.project-note{display:block}.project-note p+p{margin-top:6px}}
 
+.trip-lines{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.trip-lines h2{font-size:.82rem;margin-bottom:10px}
+.trip-lines ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.trip-lines li{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-left:4px solid var(--route-color);border-radius:5px;background:#fafbf5}
+.trip-lines .route-badge{min-width:40px;min-height:31px;font-size:.78rem;padding:2px 7px}
+.trip-lines strong,.trip-lines small{display:block}
+.trip-lines strong{font-size:.78rem;line-height:1.35}
+.trip-lines small{font-size:.65rem;color:var(--muted);margin-top:3px;line-height:1.35}
 @media(max-width:680px){.planner-map-wrap{position:relative}}

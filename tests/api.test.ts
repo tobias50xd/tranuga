@@ -82,17 +82,18 @@ describe('transport reliability', () => {
 });
 
 describe('complete API workflows', () => {
-  it('uses all six UGA APIs for catalog, current route map, stop ETA and planning', async () => {
+  it('queries every UGA catalog route before building the planning network', async () => {
     const {client} = mockClient({[ugaEndpoints.routes]:fixture.ugaRoutes,[ugaEndpoints.buses]:fixture.ugaVehicles,[ugaEndpoints.version]:{version:1086},[ugaEndpoints.data]:fixture.ugaStatic,[ugaEndpoints.tracking('5750')]:fixture.ugaTracking,[ugaEndpoints.stop('155104')]:fixture.ugaStop});
     const service = new TransitService(UGA_AGENCY,client); const routes = await service.listRoutes(); const route = await service.getRoute('5750'); const stop = await service.getStop('155104'); const network = await service.getNetwork();
     expect(routes).toHaveLength(2); expect(route.stops).toHaveLength(19); expect(route.vehicles).toHaveLength(1); expect(stop.departures.length).toBeGreaterThan(1); expect(network.patterns).toHaveLength(1);
-    expect(new Set(client.calls.map(c => c.url)).size).toBe(6);
+    expect(new Set(client.calls.map(c => c.url)).size).toBe(7);
+    expect(client.calls.some(call => call.url === ugaEndpoints.tracking('5741'))).toBe(true);
   });
-  it('excludes route from planning when current stops fail while route map labels static fallback', async () => {
+  it('retains verified static stop order when current route stops fail', async () => {
     const {client} = mockClient({[ugaEndpoints.routes]:fixture.ugaRoutes,[ugaEndpoints.buses]:fixture.ugaVehicles,[ugaEndpoints.version]:{version:1086},[ugaEndpoints.data]:fixture.ugaStatic});
     const service = new TransitService(UGA_AGENCY,client), detail = await service.getRoute('5750'), network = await service.getNetwork();
     expect(detail.stops.length).toBeGreaterThan(1); expect(detail.warnings.join(' ')).toContain('Showing static stops');
-    expect(network.patterns).toEqual([]); expect(network.warnings.join(' ')).toContain('excluded from planning');
+    expect(network.patterns).toHaveLength(1); expect(network.warnings.join(' ')).toContain('verified static stop order');
   });
   it('continues to show live stops when static dataset is unavailable and warns about missing trace', async () => {
     const {client} = mockClient({[ugaEndpoints.routes]:fixture.ugaRoutes,[ugaEndpoints.buses]:fixture.ugaVehicles,[ugaEndpoints.tracking('5750')]:fixture.ugaTracking});

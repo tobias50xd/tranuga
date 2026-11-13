@@ -83,10 +83,20 @@ describe('directed bus journeys', () => {
     const result = journey(planJourney(network([pattern('1', [a, b, c, a])]), c, b, options));
     expect(result.legs.find(leg => leg.kind === 'ride')?.stops.map(stop => stop.id)).toEqual(['c', 'a', 'b']);
   });
-  it('excludes inactive routes even if their topology and predictions exist', () => {
+  it('excludes inactive routes with topology but no fresh service evidence', () => {
     const data = network([pattern('1', [a, b]), pattern('2', [c, d])]);
     data.routes[0].active = false;
     expect(planJourney(data, a, b, options)).toMatchObject({ status: 'unavailable' });
+  });
+  it('uses a recent bus position to activate and time a route without a stop ETA', () => {
+    const data = network([pattern('1', [a, b, c])]);
+    data.routes[0].active = false;
+    data.vehicles = [{ id: 'bus', routeId: '1', lat: 0, lon: .005, heading: 90, updatedAt: NOW }];
+    const result = journey(planJourney(data, b, c, { ...options, estimatedWaitSeconds: 450 }));
+    const ride = result.legs.find(leg => leg.kind === 'ride');
+    expect(ride?.source).toBe('vehicle');
+    expect(ride?.startTime).toBeLessThan(NOW + 450_000);
+    expect(result.confidence).toBe('live-assisted');
   });
   it('rejects invalid input and networks without available topology', () => {
     expect(planJourney(network([]), a, b, options)).toMatchObject({ status: 'unavailable' });

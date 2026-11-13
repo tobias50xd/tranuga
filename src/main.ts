@@ -55,6 +55,11 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.qu
 function announce(message: string) { $('#announcement').textContent = message; }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : 'The transit service is unavailable. Try again shortly.'; }
 const warning = renderNotes;
+type HistoryMode = 'push' | 'replace' | 'none';
+function setPath(path: string, mode: HistoryMode) {
+  if (mode === 'none' || window.location.pathname === path) return;
+  window.history[mode === 'replace' ? 'replaceState' : 'pushState']({}, '', path);
+}
 function setView(next: typeof view) {
   Object.values(pointInputs).forEach(input => input.destroy()); pointInputs = {};
   map?.destroy(); map = undefined; view = next; operation++;
@@ -96,7 +101,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-nav]').forEach(button => but
 });
 $('#home').onclick = () => void showRoutes();
 
-async function showRoutes(refresh = false) {
+async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
+  setPath('/routes', historyMode);
   setView('routes'); const token = operation;
   main.innerHTML = `<section class="catalog container">
     <div class="eyebrow">YOUR NEXT CONNECTION</div>
@@ -105,7 +111,7 @@ async function showRoutes(refresh = false) {
     <div id="catalog-status" role="status"></div><div id="routes" class="route-grid" aria-label="Bus routes"><div class="loading">Loading available routes…</div></div>
     <aside class="catalog-note"><span class="note-number">01 — 02 — GO</span><div><h3>A little less waiting. A little more going.</h3><p>Select a route for its stops and bus positions, or let the trip planner find a connection from any point on the map.</p></div><span class="note-arrow" aria-hidden="true">↗</span></aside>
   </section>`;
-  $('#catalog-plan').onclick = showPlanner;
+  $('#catalog-plan').onclick = () => showPlanner();
   $('#refresh-routes').onclick = () => void showRoutes(true);
   $('#route-search').oninput = renderRouteCards;
   $('#active-only').onchange = renderRouteCards;
@@ -138,7 +144,8 @@ function renderRouteCards() {
   document.querySelectorAll<HTMLButtonElement>('[data-route]').forEach(button => button.onclick = () => void showRoute(button.dataset.route!));
 }
 
-async function showRoute(routeId: string) {
+async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
+  setPath(`/routes/${encodeURIComponent(routeId)}`, historyMode);
   setView('detail'); const token = operation; detail = undefined; selectedStop = undefined; selectedDirection = '';
   main.innerHTML = `<section class="container detail-page"><button class="text-button" id="back-routes">← All routes</button><div id="route-detail" class="loading" role="status">Loading route, stops and live buses…</div></section>`;
   $('#back-routes').onclick = () => void showRoutes();
@@ -216,7 +223,8 @@ function pointField(kind: 'origin' | 'destination', label: string, value: string
   return `<label class="field-label" for="${id}"><span class="point-label ${kind === 'destination' ? 'destination' : ''}" aria-hidden="true">${kind === 'origin' ? 'A' : 'B'}</span>${label}</label><div class="place-field"><input id="${id}" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-hints" aria-describedby="${id}-status" autocomplete="off" spellcheck="false" maxlength="120" placeholder="Search a stop, place or address" value="${e(value)}" required><ul id="${id}-hints" class="place-hints" role="listbox" aria-label="${label} suggestions" hidden></ul><p class="place-status" id="${id}-status" role="status"></p></div>`;
 }
 
-function showPlanner() {
+function showPlanner(historyMode: HistoryMode = 'push') {
+  setPath('/plan', historyMode);
   setView('plan'); pickMode = undefined; planning = false;
   main.innerHTML = `<section class="container planner-page"><div class="eyebrow">MAKE A CONNECTION</div><div class="page-heading"><div><h1 tabindex="-1">Your way from A to B<span>.</span></h1><p>Search places or stops. We’ll compare the available bus connections.</p></div></div>
     <div class="planner-layout"><aside class="trip-panel"><form id="trip-form"><fieldset id="trip-fields">
@@ -227,7 +235,7 @@ function showPlanner() {
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
       <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div></div></div>
-      <div class="planning-note">${warning(['The planner compares directed bus trips, walking and transfers. Missing predictions use a 7.5-minute wait and estimated bus travel. Trips are estimates, not a timetable guarantee. Only routes marked active are used.'], 'estimate')}</div></section>`;
+      <div class="planning-note">${warning(['The planner loads the full directed route topology, connects lines at shared or nearby stops, and ranks usable service with current ETAs and recent bus positions. Missing live timing uses a 7.5-minute wait and estimated bus travel. Trips are estimates, not a timetable guarantee.'], 'estimate')}</div></section>`;
   map = new TransitMap($('#trip-map'), agency.center || center, point => {
     if (!pickMode || planning) return;
     const label = pickMode === 'origin' ? 'Start selected on map' : 'Destination selected on map';
@@ -313,23 +321,30 @@ async function findTrip() {
   $('#trip-result').innerHTML = ''; $('#trip-status').textContent = 'Comparing available routes, arrivals and transfers…';
   try {
     // Refresh the network for each search so old predictions are not reused as current.
-    network = await service.getNetwork();
+    const currentNetwork = await service.getNetwork(); network = currentNetwork;
     if (token !== operation) return;
-    const result = planJourney(network, from, to, { now: Date.now(), maxWalkMeters: Number($<HTMLSelectElement>('#max-walk').value) });
-    $('#trip-status').innerHTML = warning(network.messages, 'service') + warning(network.warnings);
+    const result = planJourney(currentNetwork, from, to, { now: Date.now(), maxWalkMeters: Number($<HTMLSelectElement>('#max-walk').value) });
+    $('#trip-status').innerHTML = warning(currentNetwork.messages, 'service') + warning(currentNetwork.warnings);
     if (result.status === 'unavailable') { $('#trip-result').innerHTML = `<div class="empty"><h3>No bus connection found</h3><p>${e(result.reason)}</p><p>Try a point closer to a stop or increase the walking limit.</p></div>`; return; }
     const trip = result.journey;
+    const routeById = new Map(currentNetwork.routes.map(route => [route.id, route]));
+    const rideLegs = trip.legs.filter(leg => leg.kind === 'ride');
+    const usedLines = [...new Map(rideLegs.map(leg => [leg.routeId, {
+      route: routeById.get(leg.routeId), leg, busCount: currentNetwork.vehicles.filter(bus => bus.routeId === leg.routeId).length,
+    }])).values()];
     $('#trip-result').innerHTML = `<div class="trip-summary"><div class="eyebrow">QUICKEST ESTIMATED CONNECTION</div><strong>${Math.ceil(trip.durationSeconds / 60)} <small>min</small></strong><p>Arrive ${clockTime(trip.arrivalTime)} · ${trip.transfers} transfer${trip.transfers === 1 ? '' : 's'} · ${Math.round(trip.walkingMeters)} m walking</p><span class="estimate-badge">${trip.confidence === 'live-assisted' ? 'Uses live predictions + estimates' : 'Estimated timing'}</span></div>
-      <ol class="journey-legs">${trip.legs.map(leg => `<li class="journey-leg ${leg.kind}"><span class="leg-icon" aria-hidden="true">${leg.kind === 'walk' ? '↗' : leg.kind === 'wait' ? '◷' : '→'}</span><div><strong>${leg.kind === 'ride' ? e(leg.routeName) : leg.kind === 'wait' ? 'Wait for your bus' : 'Walk'}</strong><span>${clockTime(leg.startTime)} – ${clockTime(leg.endTime)}</span><p>${leg.kind === 'ride' ? `${e(leg.stops[0]?.name)} → ${e(leg.stops.at(-1)?.name)}<br>${e(leg.direction)} · ${leg.source === 'live' ? 'Live assisted' : 'Estimated'}` : `${Math.ceil((leg.endTime - leg.startTime) / 60000)} min`}</p></div></li>`).join('')}</ol><details class="assumptions"><summary>How this estimate works</summary>${trip.assumptions.map(item => `<p>${e(item)}</p>`).join('')}</details>`;
-    map?.showJourney(trip, new Map(network.routes.map(route => [route.id, route.color])));
-    $('#map-instruction').textContent = 'Bus lines connect the stops used. Walking lines show straight-line estimates.';
+      <section class="trip-lines" aria-labelledby="trip-lines-title"><h2 id="trip-lines-title">Bus lines for this trip</h2><ul>${usedLines.map(({ route, leg, busCount }) => `<li style="--route-color:${safeColor(route?.color ?? '#b92535')}"><span class="route-badge">${e(route?.shortName || leg.routeId)}</span><span><strong>${e(route?.name || leg.routeName)}</strong><small>${e(leg.direction)} · ${busCount} bus${busCount === 1 ? '' : 'es'} currently reported</small></span></li>`).join('')}</ul></section>
+      <ol class="journey-legs">${trip.legs.map(leg => `<li class="journey-leg ${leg.kind}"><span class="leg-icon" aria-hidden="true">${leg.kind === 'walk' ? '↗' : leg.kind === 'wait' ? '◷' : '→'}</span><div><strong>${leg.kind === 'ride' ? e(leg.routeName) : leg.kind === 'wait' ? 'Wait for your bus' : 'Walk'}</strong><span>${clockTime(leg.startTime)} – ${clockTime(leg.endTime)}</span><p>${leg.kind === 'ride' ? `${e(leg.stops[0]?.name)} → ${e(leg.stops.at(-1)?.name)}<br>${e(leg.direction)} · ${leg.source === 'live' ? 'Live ETA' : leg.source === 'vehicle' ? 'Recent bus position' : 'Estimated'}` : `${Math.ceil((leg.endTime - leg.startTime) / 60000)} min`}</p></div></li>`).join('')}</ol><details class="assumptions"><summary>How this estimate works</summary>${trip.assumptions.map(item => `<p>${e(item)}</p>`).join('')}</details>`;
+    map?.showJourney(trip, currentNetwork);
+    $('#map-instruction').textContent = 'The colored bus lines and their currently reported buses are shown on the map. Dashed grey lines are walking estimates.';
     announce(`Trip found. ${Math.ceil(trip.durationSeconds / 60)} minutes, arriving ${clockTime(trip.arrivalTime)}.`);
   } catch (error) {
     if (token === operation) $('#trip-status').innerHTML = `${warning([errorMessage(error)], 'error')}`;
   } finally { if (token === operation) { planning = false; fields.disabled = false; renderReplication(); } }
 }
 
-async function showAgencies() {
+async function showAgencies(historyMode: HistoryMode = 'push') {
+  setPath('/networks', historyMode);
   setView('agencies'); const token = operation; const revision = ++agencyRevision;
   main.innerHTML = `<section class="container networks-page"><div class="eyebrow">BEYOND CAMPUS</div><div class="page-heading"><div><h1 tabindex="-1">Find your network<span>.</span></h1><p>Start with UGA or explore an agency connected to myStop / InfoPoint.</p></div></div>
     <button class="network-home" id="select-uga"><span class="route-badge">UGA</span><span><strong>University of Georgia</strong><small>Athens, Georgia · Default network</small></span><span aria-hidden="true">↗</span></button>
@@ -389,4 +404,18 @@ window.setInterval(async () => {
 
 window.setInterval(() => { if (view !== 'agencies') void crawlLive(); }, 60000);
 
-void showRoutes();
+function showCurrentPath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/plan') { showPlanner('none'); return; }
+  if (path === '/routes') { void showRoutes(false, 'none'); return; }
+  if (path === '/networks') { void showAgencies('none'); return; }
+  const routeMatch = /^\/routes\/([^/]+)$/.exec(path);
+  if (routeMatch) {
+    try { void showRoute(decodeURIComponent(routeMatch[1]), 'none'); return; }
+    catch { /* Invalid path encoding falls through to the catalog. */ }
+  }
+  void showRoutes(false, 'replace');
+}
+
+window.addEventListener('popstate', showCurrentPath);
+showCurrentPath();
