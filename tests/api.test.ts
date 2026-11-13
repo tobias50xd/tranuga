@@ -36,7 +36,8 @@ describe('actual transit response contracts', () => {
     expect(timestamp('2026-11-12T17:33:00')).toBeUndefined();
     expect(timestamp(1794522780)).toBe(1794522780000);
     expect(ugaDepartures(fixture.ugaStop)[0]).toMatchObject({ stopId: '155104', routeId: '5750', direction: '0', arrivalTime: 1794522625003 });
-    expect(infoDepartures(fixture.infoDepartures)[0]).toMatchObject({ stopId: '1', routeId: '71', direction: 'NB', tripId: '1722', arrivalTime: 1794522684000, scheduled: false });
+    // This captured row explicitly says Scheduled despite containing ETA/EDT fields.
+    expect(infoDepartures(fixture.infoDepartures)[0]).toMatchObject({ stopId: '1', routeId: '71', direction: 'NB', tripId: '1722', arrivalTime: 1794522684000, scheduled: true });
     expect(infoDepartures(fixture.infoDepartures)[0].departureTime).toBe(1794522780000);
   });
   it('preserves current UGA ordered stops and confirms loop from static sequence', () => {

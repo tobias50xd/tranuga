@@ -26,7 +26,8 @@ export function ugaTrackingPatterns(value: unknown, routeId: string, topology: U
   const tracking = rows(value, 'Route stop predictions');
   const byId = new Map(topology.stops.map(s => [s.id, s]));
   const groups = new Map<string, Record<string, unknown>[]>();
-  for (const row of tracking) { const direction = text(row.direction, '0'); groups.set(direction, [...(groups.get(direction) ?? []), row]); }
+  // Athens route tracking uses directionId, whereas campus tracking uses direction.
+  for (const row of tracking) { const direction = text(row.direction ?? row.directionId, '0'); groups.set(direction, [...(groups.get(direction) ?? []), row]); }
   return [...groups.entries()].map(([direction, group]) => {
     const ordered = group.sort((a, b) => (num(a.stopSequence) ?? 0) - (num(b.stopSequence) ?? 0)).flatMap(row => {
       const live = normalizeStops([record(row.stop)])[0], stop = live ?? byId.get(text(row.stopId)); return stop ? [stop] : [];

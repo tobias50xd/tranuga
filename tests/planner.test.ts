@@ -50,6 +50,18 @@ describe('coordinate input and walking distances', () => {
 });
 
 describe('directed bus journeys', () => {
+  it('can use a dated schedule without describing it as a live prediction', () => {
+    const data = network([pattern('1', [a, b])], [prediction('a', '1', 60, { scheduled: true })]);
+    const trip = journey(planJourney(data, a, b, { ...options, estimatedWaitSeconds: 450 }));
+    expect(trip.legs.find(leg => leg.kind === 'ride')?.startTime).toBe(NOW + 60000);
+    expect(trip.confidence).toBe('estimated');
+  });
+  it('ignores old original ETA update times even when a newly downloaded network contains them', () => {
+    const data = network([pattern('1', [a, b])], [prediction('a', '1', 60, { updatedAt: NOW - 181000 })]);
+    const trip = journey(planJourney(data, a, b, { ...options, estimatedWaitSeconds: 450 }));
+    expect(trip.legs.find(leg => leg.kind === 'ride')?.startTime).toBe(NOW + 450000);
+    expect(trip.confidence).toBe('estimated');
+  });
   it('rides through intermediate stops without paying a second boarding wait', () => {
     const result = journey(planJourney(network([pattern('1', [a, b, c])]), a, c, { ...options, estimatedWaitSeconds: 60 }));
     expect(result.legs.map(leg => leg.kind)).toEqual(['wait', 'ride']);

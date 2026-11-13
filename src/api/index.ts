@@ -36,6 +36,7 @@ export class TransitService {
   private cachedStops = new Map<string, Stop>();
   private recentDepartures = new Map<string, Departure[]>();
   constructor(readonly agency: Agency = UGA_AGENCY, client = new ApiClient()) {
+    if (agency.kind === 'passio') throw new Error('Use PassioService for Passio agencies.');
     if (agency.kind === 'infopoint' && !agency.restUrl) throw new Error('Agency has no InfoPoint URL.');
     this.client = client;
   }
@@ -52,7 +53,7 @@ export class TransitService {
   }
   async refreshVehicles(): Promise<Vehicle[]> {
     const data = await this.client.get(this.agency.kind === 'uga' ? ugaEndpoints.buses : infoEndpoints(this.agency.restUrl!).visibleRoutes, 10000);
-    return normalizeVehicles(data, this.agency.kind);
+    return normalizeVehicles(data, this.agency.kind === 'uga' ? 'uga' : 'infopoint');
   }
   async getMessages(): Promise<string[]> {
     return this.agency.kind === 'uga' ? [] : messages(await this.client.get(infoEndpoints(this.agency.restUrl!).messages, 60000));

@@ -30,8 +30,8 @@ export class TransitMap {
     this.routes.clearLayers(); this.stops.clearLayers(); this.journey.clearLayers();
     const patterns = detail.patterns.filter(pattern => !direction || pattern.id === direction);
     for (const pattern of patterns) {
-      const shape = pattern.shape.length > 1 ? pattern.shape : pattern.stops;
-      if (shape.length > 1) L.polyline(shape.map(p => [p.lat, p.lon]), { color: safeColor(detail.route.color), weight: 6, opacity: .9, dashArray: pattern.shape.length > 1 ? undefined : '6,8' }).addTo(this.routes);
+      const segments = pattern.shapeSegments?.length ? pattern.shapeSegments : [pattern.shape.length > 1 ? pattern.shape : pattern.stops];
+      for (const shape of segments) if (shape.length > 1) L.polyline(shape.map(p => [p.lat, p.lon]), { color: safeColor(detail.route.color), weight: 6, opacity: .9, dashArray: pattern.shape.length > 1 || pattern.shapeSegments?.length ? undefined : '6,8' }).addTo(this.routes);
     }
     const visibleStops = direction ? [...new Map(patterns.flatMap(p => p.stops).map(s => [s.id, s])).values()] : detail.stops;
     for (const stop of visibleStops) {

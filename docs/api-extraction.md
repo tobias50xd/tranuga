@@ -1,5 +1,7 @@
 # Bus API extraction notes
 
+These are the preserved November 12 APK API findings. The current [README request catalog](../README.md#complete-api-inventory-33-patterns) bundles all 33 patterns, including the later [Passio website extraction](passio-api.md) and [replication rules](replication.md). No APK visual design is used by the webapp.
+
 This document records the bus-information APIs used by the two supplied APK sets, how they were recovered, and whether the requests are authenticated. The results are based on static call-site analysis plus read-only requests made on **2026-11-12 UTC**.
 
 ## APKs examined

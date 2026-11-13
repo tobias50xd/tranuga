@@ -33,7 +33,7 @@ export function color(value: unknown): string {
 export function normalizeRoutes(value: unknown, agencyId: string, kind: 'uga' | 'infopoint'): Route[] {
   return rows(value, 'Route list').flatMap(row => {
     const id = text(kind === 'uga' ? row.id : row.RouteId); if (!id) return [];
-    return [{ id, agencyId, name: text(row.long_name ?? row.LongName ?? row.Description, `Route ${id}`), shortName: text(row.short_name ?? row.ShortName ?? row.RouteAbbreviation, id), color: color(row.color ?? row.Color ?? row.hex), active: kind === 'uga' ? row.active === true : row.IsVisible !== false }];
+    return [{ id, agencyId, name: text(row.long_name ?? row.LongName ?? row.Description, `Route ${id}`), shortName: text(row.short_name ?? row.ShortName ?? row.RouteAbbreviation, id), color: color(row.color ?? row.Color ?? row.hex), active: kind === 'uga' ? row.active === true : row.IsVisible !== false, availability: kind === 'uga' ? 'current' : 'published' }];
   });
 }
 export function normalizeStops(value: unknown): Stop[] {
@@ -53,7 +53,8 @@ export function normalizeVehicles(value: unknown, kind: 'uga' | 'infopoint', now
 export function ugaDepartures(value: unknown): Departure[] {
   return rows(value, 'Arrival predictions').flatMap(row => (Array.isArray(row.times) ? row.times : []).flatMap(t => {
     const arrivalTime = timestamp(t), stopId = text(row.stopId), routeId = text(row.routeId);
-    return arrivalTime && stopId && routeId ? [{ stopId, routeId, arrivalTime, direction: text(row.direction) }] : [];
+    // Campus/selected-stop responses use direction; city routeTracking uses directionId.
+    return arrivalTime && stopId && routeId ? [{ stopId, routeId, arrivalTime, direction: text(row.direction ?? row.directionId) }] : [];
   }));
 }
 export function infoDepartures(value: unknown): Departure[] {
@@ -61,7 +62,8 @@ export function infoDepartures(value: unknown): Departure[] {
     const eta = timestamp(d.ETA), edt = timestamp(d.EDT);
     const arrivalTime = eta ?? edt ?? timestamp(d.STA) ?? timestamp(d.SDT), trip = record(d.Trip), routeId = text(rd.RouteId), stopId = text(stop.StopId);
     const departs = edt ?? timestamp(d.SDT);
-    return arrivalTime && routeId && stopId ? [{ routeId, stopId, arrivalTime, departureTime: departs && departs >= arrivalTime ? departs : undefined, direction: text(rd.DirectionCode ?? trip.TripDirection ?? rd.Direction), tripId: text(trip.TripId ?? trip.GtfsTripId) || undefined, scheduled: !eta && !edt }] : [];
+    const scheduledStatus = [d.StopStatusReportLabel, d.TripStatusReportLabel, trip.TripStatusReportLabel].some(value => /^scheduled(?:\s|$|\()/i.test(text(value).trim()));
+    return arrivalTime && routeId && stopId ? [{ routeId, stopId, arrivalTime, updatedAt: timestamp(d.LastUpdated ?? stop.LastUpdated), departureTime: departs && departs >= arrivalTime ? departs : undefined, direction: text(rd.DirectionCode ?? trip.TripDirection ?? rd.Direction), tripId: text(trip.TripId ?? trip.GtfsTripId) || undefined, scheduled: scheduledStatus || !eta && !edt }] : [];
   })));
 }
 export function normalizeAgencies(value: unknown): Agency[] {

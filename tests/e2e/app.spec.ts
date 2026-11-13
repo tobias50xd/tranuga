@@ -1,7 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import fixture from '../fixtures/api-contracts.json' with { type: 'json' };
+import ohioFixture from '../fixtures/passio-ohio.json' with { type: 'json' };
+import ugaPassioFixture from '../fixtures/passio-uga.json' with { type: 'json' };
+import passioExtras from '../fixtures/passio-extras.json' with { type: 'json' };
 
-type MockOptions = { failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean };
+type MockOptions = { failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[] };
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => { const errors: string[] = []; pageErrors.set(page, errors); page.on('pageerror', error => errors.push(error.message)); });
 test.afterEach(({ page }) => { expect(pageErrors.get(page)).toEqual([]); });
@@ -15,6 +18,31 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
   await page.route('**/api?url=*', async route => {
     const url = new URL(route.request().url()).searchParams.get('url')!;
     calls.push(url); const path = new URL(url).pathname;
+    const target = new URL(url);
+    if (target.hostname === 'bustracker.accgov.com') return route.fulfill({ status:503, json:{error:'Athens legacy feed unavailable in this fixture'} });
+    if (['passiogo.com','replicated2of3.passiogo.com','replicated3of3.passiogo.com'].includes(target.hostname)) {
+      if (!options.passio || options.failedMirrors?.includes(target.hostname)) return route.fulfill({status:503,json:{error:'Passio node unavailable'}});
+      const body = route.request().postDataJSON() || {};
+      const system = body.systemSelected0 || body.s0 || body.systems?.systemSelected0 || target.searchParams.get('userId') || '5842';
+      const passio = structuredClone(system === '3994' ? ugaPassioFixture : ohioFixture);
+      for (const rows of Object.values(passio.eta.ETAs)) for (const row of rows) {
+        Object.assign(row, {arrivalTimestamp:Date.now()+300000,etaUtc:Date.now()+300000,updatedUtc:new Date().toISOString().slice(0,19).replace('T',' ')});
+      }
+      const query = target.searchParams;
+      let response: unknown;
+      if (query.get('getRoutes') === '1') response = passio.catalog;
+      else if (query.get('getStops') === '2') response = passio.topology;
+      else if (query.get('getBuses') === '1') response = passio.buses;
+      else if (query.has('getAlertMessages')) response = passio.messages;
+      else if (query.get('eta') === '3') { const ids = (query.get('stopIds') || '').split(','); response = {...passio.eta, ETAs:Object.fromEntries(Object.entries(passio.eta.ETAs).filter(([id])=>ids.includes(id)))}; }
+      else if (query.get('getSystems') === '2') response = passioExtras.systems;
+      else if (query.has('goWebVer')) response = passioExtras.version;
+      else if (query.get('getRoutes') === '2') response = passioExtras.groups;
+      else if (query.get('getBuses') === '2') response = passioExtras.search;
+      else if (query.get('schedule') === '4') response = passioExtras.timetable;
+      else if (query.get('walk') === '2') response = passioExtras.comparison;
+      return response === undefined ? route.fulfill({status:404,json:{error:'Unknown Passio query'}}) : route.fulfill({json:response});
+    }
     let result: unknown;
     if (path.endsWith('/cache/Routes')) {
       if (options.failRoutes) return route.fulfill({ status: 503, json: { error: 'Operator unavailable' } });
@@ -236,4 +264,77 @@ test('rapid navigation during map focus does not leave a callback on a removed m
   // Observe both the next frame and Leaflet's former 250 ms zoom completion timer.
   await page.waitForTimeout(350);
   await expect(page.locator('#trip-map')).toBeVisible();
+});
+
+test('the supplied Passio network stays in Ohio and uses all three replicas', async ({ page }) => {
+  const {calls}=await mockTransit(page,{passio:true});
+  await page.goto('/');await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
+  await expect(page.locator('#agency-name')).toContainText('Ohio');
+  await expect(page.locator('.route-card')).toHaveCount(3);
+  await expect(page.locator('#source-summary')).toContainText('3/3 backend replicas');
+  await page.locator('[data-route="66949"]').click();
+  await expect(page.locator('.stop-list li')).not.toHaveCount(0);
+  await expect(page.locator('.bus-marker')).not.toHaveCount(0);
+  expect(calls.filter(url=>url.includes('getRoutes=1')).some(url=>url.startsWith('https://passiogo.com'))).toBe(true);
+  expect(calls.some(url=>url.startsWith('https://replicated2of3.passiogo.com'))).toBe(true);
+  expect(calls.some(url=>url.startsWith('https://replicated3of3.passiogo.com'))).toBe(true);
+  await expect(page.locator('#route-detail h1')).toContainText('APT Line 3');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('Passio keeps maps and predictions available with only one healthy replica', async ({ page }) => {
+  await mockTransit(page,{passio:true,failedMirrors:['passiogo.com','replicated2of3.passiogo.com']});
+  await page.goto('/');await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
+  await expect(page.locator('.route-card')).toHaveCount(3);
+  await expect(page.locator('#source-summary')).toContainText('1/3 backend replicas');
+  await page.locator('[data-route="66949"]').click();
+  await expect(page.locator('#route-warnings')).toContainText('Backup data');
+  await page.locator('.stop-list button').first().click();
+  await expect(page.locator('.stop-arrivals')).toContainText('Predicted');
+});
+
+test('Passio data supports Georgia trips when the UGA catalog is unavailable', async ({ page }) => {
+  await mockTransit(page,{passio:true,failRoutes:true});await page.goto('/');
+  await expect(page.locator('[data-route="5750"]')).toBeVisible();
+  await page.locator('nav [data-nav="plan"]').click();
+  await page.getByRole('textbox',{name:'Start',exact:true}).fill('33.932505,-83.371494');
+  await page.getByRole('textbox',{name:'Destination',exact:true}).fill('33.95458,-83.376482');
+  await page.getByRole('button',{name:'Find quickest bus trip'}).click();
+  await expect(page.locator('.trip-summary')).toBeVisible();
+  await expect(page.locator('.journey-leg.ride')).not.toHaveCount(0);
+  await expect(page.locator('#trip-status')).toContainText('Backup data');
+});
+
+test('provider metadata, fleet search, timetable and explicit trip comparison use the extracted reads',async({page})=>{
+  const {calls}=await mockTransit(page,{passio:true});await page.goto('/');
+  await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
+  await page.locator('#source-summary').click();await page.getByRole('button',{name:'Provider information',exact:true}).click();
+  await expect(page.locator('#provider-details')).toContainText('Web API version');
+  await expect(page.locator('#provider-details')).toContainText('Athens');
+  await page.locator('[data-route="66949"]').click();
+  await page.getByLabel('Find a bus by fleet number').fill('2100');await page.getByRole('button',{name:'Find bus',exact:true}).click();
+  await expect(page.locator('#bus-search-result')).toContainText('Bus');
+  await page.locator('.stop-list button').first().click();await page.getByRole('button',{name:'Provider timetable',exact:true}).click();
+  await expect(page.locator('#stop-timetable')).toContainText('Provider clock times');
+  await page.locator('nav [data-nav="plan"]').click();
+  await page.getByRole('textbox',{name:'Start',exact:true}).fill('39.29566789,-82.11205432');
+  await page.getByRole('textbox',{name:'Destination',exact:true}).fill('39.325428,-82.101967');
+  expect(calls.some(url=>url.includes('walk=2'))).toBe(false);
+  await page.locator('.operator-comparison summary').click();await page.getByRole('button',{name:'Request provider comparison'}).click();
+  await expect(page.locator('#operator-result article')).not.toHaveCount(0);
+  for(const query of ['getSystems=2','goWebVer=1','getRoutes=2','getBuses=2','schedule=4','walk=2'])expect(calls.some(url=>url.includes(query)),query).toBe(true);
+  const saved=await page.evaluate(()=>localStorage.getItem('tranuga.transit-replicas.v1')||'');
+  expect(saved).not.toContain('39.29566789');
+});
+
+test('a delayed provider suggestion cannot replace results after endpoints change',async({page})=>{
+  await mockTransit(page,{passio:true});let release!:()=>void;const waiting=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api?url=*',async route=>{if(new URL(route.request().url()).searchParams.get('url')?.includes('walk=2'))await waiting;await route.fallback();});
+  await page.goto('/');await page.locator('nav [data-nav="plan"]').click();
+  await page.getByRole('textbox',{name:'Start',exact:true}).fill('33.94,-83.37');await page.getByRole('textbox',{name:'Destination',exact:true}).fill('33.95,-83.38');
+  await page.locator('.operator-comparison summary').click();await page.getByRole('button',{name:'Request provider comparison'}).click();
+  await expect(page.getByRole('button',{name:'Request provider comparison'})).toBeDisabled();
+  await page.getByRole('textbox',{name:'Destination',exact:true}).fill('33.96,-83.39');release();
+  await expect(page.getByRole('button',{name:'Request provider comparison'})).toBeEnabled();
+  await expect(page.locator('#operator-result')).toBeEmpty();
 });

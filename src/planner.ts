@@ -234,6 +234,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
     && network.updatedAt <= config.now + 60_000;
   const departures = new Map<string, Departure[]>();
   if (fresh) for (const departure of network.departures) {
+    if (departure.updatedAt !== undefined && (!Number.isFinite(departure.updatedAt) || config.now - departure.updatedAt > config.maxRealtimeAgeSeconds * 1000 || departure.updatedAt > config.now + 60000)) continue;
     if (!Number.isFinite(departure.arrivalTime) || boardingTime(departure) < config.now || departure.arrivalTime > deadline) continue;
     const key = JSON.stringify([departure.stopId, departure.routeId]);
     const list = departures.get(key) ?? []; list.push(departure); departures.set(key, list);
@@ -311,7 +312,7 @@ export function planJourney(network: Network, origin: Coordinate, destination: C
           if (arrival > deadline || labels.get(key)?.some(existing => dominates(existing, {
             time: arrival, boardings: current.boardings + 1, walking: current.walking,
           }))) continue;
-          const source = candidate.prediction ? 'live' : 'estimated';
+          const source = candidate.prediction && !candidate.prediction.scheduled ? 'live' : 'estimated';
           const legs: JourneyLeg[] = [];
           if (candidate.start > current.time) legs.push({ kind: 'wait', from: place(stop), to: place(stop), startTime: current.time, endTime: candidate.start, source });
           legs.push({ kind: 'ride', routeId: pattern.routeId, routeName: active.get(pattern.routeId)!.name, direction: pattern.direction,

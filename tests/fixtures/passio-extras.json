@@ -1,0 +1,490 @@
+{
+  "systems": {
+    "all": [
+      {
+        "fullname": "Athens Public Transit",
+        "username": "athenstransit",
+        "goAgencyName": null,
+        "id": "5842"
+      },
+      {
+        "fullname": "University of Georgia (UGA)",
+        "username": "uga",
+        "goAgencyName": "University of Georgia (UGA)",
+        "id": "3994"
+      }
+    ]
+  },
+  "version": {
+    "ver": 110
+  },
+  "groups": {
+    "all": [
+      {
+        "name": "APT Line 2",
+        "shortName": "2",
+        "color": "#d62728",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66947",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "APT Line 2",
+        "groupId": "7492",
+        "groupColor": "#d62728",
+        "stopsAmount": "43"
+      },
+      {
+        "name": "APT Line 3",
+        "shortName": "3",
+        "color": "#bd9e39",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66949",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "APT Line 3",
+        "groupId": "7493",
+        "groupColor": "#bd9e39",
+        "stopsAmount": "45"
+      },
+      {
+        "name": "Line 5 Plains",
+        "shortName": "5 Plains",
+        "color": "#1f77b4",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "73814",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Line 5 Plains",
+        "groupId": "7832",
+        "groupColor": "#1f77b4",
+        "stopsAmount": "44"
+      },
+      {
+        "name": "7",
+        "shortName": null,
+        "color": "#2ca02c",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66945",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "7",
+        "groupId": "7756",
+        "groupColor": "#2ca02c",
+        "stopsAmount": "35"
+      },
+      {
+        "name": "Courtyard Short",
+        "shortName": "CS",
+        "color": "#e377c2",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "61600",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Courtyard Short",
+        "groupId": "8042",
+        "groupColor": "#e377c2",
+        "stopsAmount": "11"
+      },
+      {
+        "name": "Courtyard",
+        "shortName": "CY",
+        "color": "#e377c2",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66957",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Courtyard",
+        "groupId": "7497",
+        "groupColor": "#e377c2",
+        "stopsAmount": "22"
+      },
+      {
+        "name": "Line 6 Chauncey",
+        "shortName": null,
+        "color": "#17becf",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "73812",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Line 6 Chauncey",
+        "groupId": "7833",
+        "groupColor": "#17becf",
+        "stopsAmount": "44"
+      },
+      {
+        "name": "Long Summit",
+        "shortName": "LS",
+        "color": "#fd8d3c",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66961",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Long Summit",
+        "groupId": "7498",
+        "groupColor": "#fd8d3c",
+        "stopsAmount": "22"
+      },
+      {
+        "name": "OWL Courtyard",
+        "shortName": "OC",
+        "color": "#e377c2",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66963",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "OWL Courtyard",
+        "groupId": "7499",
+        "groupColor": "#e377c2",
+        "stopsAmount": "26"
+      },
+      {
+        "name": "OWL Summit",
+        "shortName": "OWL",
+        "color": "#ff7f0e",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66964",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "OWL Summit",
+        "groupId": "7500",
+        "groupColor": "#ff7f0e",
+        "stopsAmount": "24"
+      },
+      {
+        "name": "Short Summit",
+        "shortName": "S SUM",
+        "color": "#ff7f0e",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66965",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Short Summit",
+        "groupId": "7501",
+        "groupColor": "#ff7f0e",
+        "stopsAmount": "22"
+      },
+      {
+        "name": "Summer Summit",
+        "shortName": null,
+        "color": "#ff7f0e",
+        "timezone": "America/New_York",
+        "outdated": "0",
+        "myid": "66966",
+        "goPrefixRouteName": "1",
+        "goShowSchedule": 1,
+        "userId": "5842",
+        "fullname": "Athens Public Transit",
+        "distance": 0,
+        "nameOrig": "Summer Summit",
+        "groupId": "8464",
+        "groupColor": "#ff7f0e",
+        "stopsAmount": "11"
+      }
+    ]
+  },
+  "timetable": {
+    "routes": {
+      "0": {
+        "routeId": 66949,
+        "routeName": "APT Line 3",
+        "routeColor": "#bd9e39",
+        "timezone": 0,
+        "inactive": 0,
+        "serviceTime": "",
+        "routeStops": [
+          {
+            "routeStopId": "1555928",
+            "stopName": "Berkley Turnaround",
+            "stopId": "190923",
+            "position": "1",
+            "timepoints": {
+              "past": [
+                "6:48 AM",
+                "7:48 AM",
+                "8:48 AM",
+                "9:48 AM",
+                "10:48 AM",
+                "11:48 AM",
+                "12:48 PM",
+                "1:48 PM",
+                "2:48 PM",
+                "3:48 PM",
+                "4:48 PM",
+                "5:48 PM",
+                "6:48 PM",
+                "7:48 PM"
+              ],
+              "next": [
+                "8:48 PM",
+                "9:48 PM"
+              ]
+            }
+          },
+          {
+            "routeStopId": "1555972",
+            "stopName": "Berkley Turnaround",
+            "stopId": "190923",
+            "flagStop": "1",
+            "position": "45",
+            "timepoints": {
+              "past": [],
+              "next": []
+            }
+          }
+        ],
+        "mostEarly": "24480"
+      },
+      "": []
+    }
+  },
+  "search": {
+    "search": {
+      "busId": "19156",
+      "foundLocation": true
+    },
+    "buses": {
+      "449441": [
+        {
+          "deviceId": 449441,
+          "created": "08:45 PM",
+          "createdTime": "08:45 PM",
+          "paxLoad": 0,
+          "bus": "2100",
+          "busId": 19156,
+          "userId": "5842",
+          "routeBlockId": "184721",
+          "latitude": "39.303148100",
+          "longitude": "-82.104283300",
+          "calculatedCourse": "239.61568965241713",
+          "tripId": "989397",
+          "outOfService": 0,
+          "more": "102",
+          "totalCap": 0,
+          "color": "#bd9e39",
+          "busName": "2100",
+          "busType": null,
+          "routeId": "66949",
+          "route": "APT Line 3",
+          "outdated": 0
+        }
+      ],
+      "449445": [
+        {
+          "deviceId": 449445,
+          "created": "08:45 PM",
+          "createdTime": "08:45 PM",
+          "paxLoad": 0,
+          "bus": "2602",
+          "busId": 21369,
+          "userId": "5842",
+          "routeBlockId": "184729",
+          "latitude": "39.327460000",
+          "longitude": "-82.100172300",
+          "calculatedCourse": "82.96930623384947",
+          "tripId": "989451",
+          "outOfService": 0,
+          "more": "101",
+          "totalCap": 0,
+          "color": "#e377c2",
+          "busName": "2602",
+          "busType": null,
+          "routeId": "66957",
+          "route": "Courtyard",
+          "outdated": 0
+        }
+      ],
+      "449455": [
+        {
+          "deviceId": 449455,
+          "created": "08:45 PM",
+          "createdTime": "08:45 PM",
+          "paxLoad": 0,
+          "bus": "2202",
+          "busId": 19158,
+          "userId": "5842",
+          "routeBlockId": "184737",
+          "latitude": "39.328470600",
+          "longitude": "-82.104402300",
+          "calculatedCourse": "129.0355128979619",
+          "tripId": "989534",
+          "outOfService": 0,
+          "more": "102",
+          "totalCap": 0,
+          "color": "#fd8d3c",
+          "busName": "2202",
+          "busType": null,
+          "routeId": "66961",
+          "route": "Long Summit",
+          "outdated": 0
+        }
+      ]
+    }
+  },
+  "comparison": {
+    "bestPath": {
+      "routes": [
+        {
+          "transfers": 0,
+          "legs": [
+            {
+              "steps": [
+                {
+                  "boardingStop": {
+                    "stopName": "Berkley Turnaround",
+                    "stopId": "190923",
+                    "stopCode": "179522",
+                    "busId": null,
+                    "stopETA": null
+                  },
+                  "alightingStop": {
+                    "stopName": "Mulberry @ Baker Center Main Connecting Stop",
+                    "stopId": "190985",
+                    "stopCode": "179525",
+                    "busId": null,
+                    "stopETA": null
+                  },
+                  "travel_mode": "TRANSIT",
+                  "duration": {
+                    "text": "~0.1h",
+                    "value": 360
+                  },
+                  "name": "3 APT Line 3",
+                  "shortName": "3"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "paths": {
+      "routes": []
+    },
+    "paths2": {
+      "routes": [
+        {
+          "legs": [
+            {
+              "duration": {
+                "text": "1 min",
+                "value": 29
+              },
+              "steps": [
+                {
+                  "duration": {
+                    "text": "1 min",
+                    "value": 18
+                  },
+                  "travel_mode": "DRIVING"
+                },
+                {
+                  "duration": {
+                    "text": "1 min",
+                    "value": 11
+                  },
+                  "travel_mode": "DRIVING"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "timestampEvidence": [
+    {
+      "busId": "14247",
+      "portalTripId": "927805",
+      "passioTripId": "927805",
+      "passioCreated": "2026-11-12 21:25:08",
+      "timezone": "America/New_York",
+      "passioCreatedEpoch": 1794536708000,
+      "portalLastUpdate": 1794536710316,
+      "differenceSeconds": -2.316
+    },
+    {
+      "busId": "14271",
+      "portalTripId": "927805",
+      "passioTripId": "927805",
+      "passioCreated": "2026-11-12 21:25:13",
+      "timezone": "America/New_York",
+      "passioCreatedEpoch": 1794536713000,
+      "portalLastUpdate": 1794536710316,
+      "differenceSeconds": 2.684
+    },
+    {
+      "busId": "14264",
+      "portalTripId": "1152800",
+      "passioTripId": "1152800",
+      "passioCreated": "2026-11-12 21:25:12",
+      "timezone": "America/New_York",
+      "passioCreatedEpoch": 1794536712000,
+      "portalLastUpdate": 1794536710316,
+      "differenceSeconds": 1.684
+    },
+    {
+      "busId": "14272",
+      "portalTripId": "1152800",
+      "passioTripId": "1152800",
+      "passioCreated": "2026-11-12 21:25:10",
+      "timezone": "America/New_York",
+      "passioCreatedEpoch": 1794536710000,
+      "portalLastUpdate": 1794536710316,
+      "differenceSeconds": -0.316
+    },
+    {
+      "busId": "14274",
+      "portalTripId": "1152800",
+      "passioTripId": "1152800",
+      "passioCreated": "2026-11-12 21:25:12",
+      "timezone": "America/New_York",
+      "passioCreatedEpoch": 1794536712000,
+      "portalLastUpdate": 1794536710316,
+      "differenceSeconds": 1.684
+    }
+  ]
+}

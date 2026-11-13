@@ -1,6 +1,6 @@
 # Cloudflare deployment
 
-The client is a static Vite build in `dist/`. Cloudflare Workers Static Assets serves those files. A small Worker handles only `/api?url=...`, forwarding the documented public GET endpoints; all route planning and UI rendering run in the browser. There is no application database, server-rendered page, login, or transit API credential.
+The client is a static Vite build in `dist/`. Cloudflare Workers Static Assets serves those files. A small Worker handles only `/api?url=...`, forwarding the documented public GET endpoints and the specifically approved Passio read queries that use POST; all route planning and UI rendering run in the browser. There is no application database, server-rendered page, login, or transit API credential.
 
 The gateway is necessary because UGA and CloudFront responses currently omit browser CORS headers, and the original myStop discovery endpoint is HTTP. Hosting the files without the gateway will load the interface but cannot reliably load live transit data. See [Cloudflare's static assets configuration](https://developers.cloudflare.com/workers/static-assets/binding/) for how `ASSETS` and `run_worker_first` are configured.
 
@@ -46,15 +46,41 @@ npx wrangler deploy --dry-run --outdir /tmp/tranuga-worker
 
 ## Gateway policy and operation
 
-- Only GET requests to the documented endpoint paths are accepted. IDs, route lists, coordinates, directions, property codes, and parameter names are validated. Browser requests from a different Origin are rejected.
-- Approved UGA/CloudFront/discovery hosts and the committed `src/data/authorities.json` roots form the complete allowlist. Runtime discovery cannot add a proxy destination. This finite registry was captured from the public authority list on 2026-11-12; updating it is an explicit source change, followed by a test/build/deployment.
+- GET requests are accepted only for the documented endpoint paths. POST is accepted only for the Passio read queries described below. Each endpoint enforces its own HTTP method. IDs, route lists, coordinates, directions, property codes, and parameter names are validated. UGA stop IDs accept the numeric campus form and the canonical city form with one lowercase `c` prefix (for example, `stop_c1` and `stop_c243`); route-tracking IDs remain numeric. Browser requests from a different Origin are rejected.
+- Approved UGA/CloudFront/discovery hosts, the three fixed Passio origins below, and the committed `src/data/authorities.json` roots form the complete allowlist. Runtime discovery cannot add a proxy destination. The InfoPoint registry was captured from the public authority list on 2026-11-12; updating it is an explicit source change, followed by a test/build/deployment.
 - Most authority requests use HTTPS. Discovery uses the original HTTP endpoint: its HTTPS certificate was expired during validation on 2026-11-12. The legacy IndyGo root advertised by that discovery response also uses HTTP. The browser-to-app connection remains HTTPS, but these particular provider-side connections do not have TLS integrity. Metadata from discovery cannot expand the gateway allowlist. TLS certificate validation is never disabled.
 - KML is allowed only under an approved agency origin's `Resources/Traces/` directory, with a `.kml` filename. Config responses cannot authorize another host. An agency that moves geometry to a different host needs an explicit policy update; stop geometry remains available when trace loading fails.
 - Redirects are rejected, preventing a permitted endpoint from forwarding the gateway to another destination. Caller cookies, Authorization headers, and provider cookies are not forwarded. No arbitrary proxy path, feedback endpoint, ticketing integration, or private address is exposed.
-- Responses have a 12-second timeout and an 8 MiB body limit, including streamed bodies. JSON/KML is validated before serving. Provider 401, 403, 404, and 429 statuses remain actionable; redirects, malformed data, and other upstream failures produce controlled errors. Errors are never cached.
-- Live route, vehicle, ETA, and message data is cached at the edge for 10 seconds. Stops, direction stop lists, static topology, configuration, discovery, and KML are cached for an hour. The provider's Date is retained as `X-Upstream-Date`; caching never changes vehicle observation times. `X-Transit-Cache` reports HIT or MISS. Local Wrangler cache behavior can differ from production.
+- Responses have a 12-second timeout and an 8 MiB body limit, including streamed bodies. Passio POST uploads are limited to 8 KiB and require a JSON object with the exact approved fields and types. JSON/KML is validated before serving. Provider 401, 403, 404, and 429 statuses remain actionable; redirects, malformed data, and other upstream failures produce controlled errors. Errors are never cached.
+- Live route, vehicle, ETA, message, and bus-search data is cached at the edge for 10 seconds. Passio variant catalogs are cached for 60 seconds. Stops, direction stop lists, static topology, configuration, discovery, KML, and Passio software-version/grouped-catalog/timetable metadata are cached for an hour. Operator-plan comparisons contain caller-selected coordinates, bypass the edge cache and return `Cache-Control: no-store`. The provider's Date is retained as `X-Upstream-Date`; caching never changes vehicle observation times. `X-Transit-Cache` reports HIT or MISS. Local Wrangler cache behavior can differ from production.
 - Static responses use `public/_headers` for browser security headers. The CSP permits only same-origin scripts/API calls and OpenStreetMap image tiles; any map-provider change must update that policy. Cloudflare documents the [static `_headers` format](https://developers.cloudflare.com/workers/static-assets/headers/).
 - Deployment sets no billing or request-rate promises. Cache reduces provider load; apply account-level Cloudflare rate limiting if traffic needs tighter limits. Provider outages and undocumented API changes must remain visible in the app.
+
+### Passio read queries
+
+The approved HTTPS origins are exactly `https://passiogo.com`, `https://replicated2of3.passiogo.com`, and `https://replicated3of3.passiogo.com`. Both replica hosts were verified with real read requests on 2026-11-13. They are mirrors of the same provider; allowing them does not make them independent transit authorities. The browser service controls fallback and comparison; the gateway enforces the same policy for every mirror.
+
+The only approved agency IDs are strings `"3994"` (University of Georgia) and `"5842"` (Athens Transit, **Ohio**). The agency at `athenstransit.passiogo.com` is not Athens, Georgia. An agency or replica cannot be added by supplying another URL or payload.
+
+The gateway accepts `POST /api?url=<encoded absolute URL>` with `Content-Type: application/json` for these read-only operations. It forwards fresh canonical JSON and no caller headers beyond the fixed Accept and Content-Type values:
+
+| Upstream path/query | Exact JSON object (`agencyId` is one of the two approved strings) |
+| --- | --- |
+| `/mapGetData.php?getRoutes=1` | `{ "systemSelected0": agencyId, "amount": 1 }` |
+| `/mapGetData.php?getRoutes=2&sortMode=1&credentials=1` | `{ "systemSelected0": agencyId, "amount": 1 }` |
+| `/mapGetData.php?getStops=2&withOutdated=1&wBounds=1&showBusInOos=0` | `{ "s0": agencyId, "sA": 1 }` |
+| `/mapGetData.php?getBuses=1&speed=1` or `/mapGetData.php?getBuses=2` | `{ "s0": agencyId, "sA": 1 }` |
+| `/mapGetData.php?getBuses=2&search=<query>` | `{ "s0": agencyId, "sA": 1 }` |
+| `/goServices.php?getAlertMessages=1&alertCRC=na&noOptions=1` | `{ "systemSelected0": agencyId, "amount": 1, "routesAmount": 0 }` |
+| `/mapGetData.php?walk=2` | `{ "systems": { "systemSelected0": agencyId, "amount": 1 }, "routes": { "amount": 0 }, "points": [{ "lat": number, "lng": number }, { "lat": number, "lng": number }], "mode": "transit" }` |
+
+Bus query versions 1 and 2 both accept the optional fixed `speed=1` flag. The separate search form requires `getBuses=2` and a nonblank query of at most 40 ASCII letters, digits, spaces, underscores or hyphens. Stop predictions use GET `/mapGetData.php?eta=3&stopIds=<IDs>&userId=<agencyId>`, optionally with numeric `routeId` and a positive numeric `position`. `stopIds` is a comma-separated list of at most 40 numeric stop IDs.
+
+Additional GET reads are `/mapGetData.php?getSystems=2&sortMode=1&credentials=1&acronymId=<agencyId>`, `/goServices.php?goWebVer=1`, and `/mapGetData.php?schedule=4&routeId=<numeric variant>&stopId=<numeric stop>`. The directory request works on the fixed backend origins, so an agency homepage cannot expand the allowlist. `credentials=1` is an observed metadata selector; no authentication header or cookie is supplied.
+
+The operator-plan body accepts exactly two `{lat,lng}` points with finite numeric latitude in `[-90,90]` and longitude in `[-180,180]`. The caller must request the operator comparison explicitly before these selected coordinates are sent. The gateway does not log the body, echo coordinates into headers, or cache its response. No background tracking coordinates, device ID, debug/timeline flag, account credential, write action, ride request, or extra field is permitted.
+
+Other POST responses are stored under a synthetic GET cache key containing the upstream origin, canonical query string, method, and SHA-256 digest of the canonical JSON body. Different agencies and replica origins cannot share a cache entry; equivalent JSON field/query order does share one. The worker test suite proves those cases, method restrictions, body validation, upload limits, unknown-action rejection, coordinate bounds, nested operator-plan schemas, no-store behavior, and credential stripping. See [the Passio extraction notes](passio-api.md) for observed upstream response contracts and their limits.
 
 ## Maintenance and rollback
 

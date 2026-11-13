@@ -1,5 +1,7 @@
 # API validation evidence
 
+The original November 12 observations below are preserved as dated evidence. The [November 13 extension](#2026-11-13-passio-and-replication-extension) records Passio, Georgia identity review and replication checks. The shipped inventory is now **33 patterns**, fully specified in the [README](../README.md#complete-api-inventory-33-patterns). Historical counts are not current service constants or a new final acceptance run.
+
 Validation date: **2026-11-12 UTC**. This file records observations from read-only unauthenticated requests made while implementing tranuga. It complements the original [API extraction notes](api-extraction.md); it is not a promise of current provider availability or a published provider compatibility contract.
 
 ## What was checked
@@ -79,3 +81,49 @@ Live tests are skipped unless `LIVE_TRANSIT=1` is explicitly set. Normal CI stay
 ## Limits of the evidence
 
 These checks validate representative UGA and CATA calls and the observed discovery directory. They do not establish all 73 agencies' live behavior, future uptime, operator permission for unrelated use, guaranteed ETA accuracy, pedestrian accessibility, or an actual Cloudflare production deployment. The gateway's reviewed-host policy can intentionally reject a newly discovered origin, an unfamiliar trace location, or a redirect until its source policy is updated and tested. See [feature.md](../feature.md) for per-endpoint shipped uses, future possibilities and the request/cache policy.
+
+
+## 2026-11-13 Passio and replication extension
+
+The requested [athenstransit.passiogo.com](https://athenstransit.passiogo.com/) bootstrap identifies system **5842, Athens Public Transit in Ohio**, around `39.32, -82.10`. The official [UGA Transit](https://tps.uga.edu/transit/) link to [routes.uga.edu](https://routes.uga.edu/) and [uga.passiogo.com](https://uga.passiogo.com/) identifies **3994, University of Georgia**, around `33.95, -83.37`. These are distinct operators and map regions.
+
+The public Passio scripts and request capture exposed five core reads (catalog, topology, buses, ETAs, messages) and six additional reads (provider identity, website version, route groups, timetable, bus search, operator transit comparison). Their exact methods, JSON bodies, optional selectors, native form wrapper and minimal unauthenticated reproduction commands are documented in [passio-api.md](passio-api.md) and the [README](../README.md). POST in these contracts is a read query; device registration, feedback, accounts and ride requests were not invoked.
+
+| New live validation | Observed result and limit |
+| --- | --- |
+| Three fixed Passio nodes | `passiogo.com`, `replicated2of3.passiogo.com` and `replicated3of3.passiogo.com` accepted the reviewed contracts for Ohio `5842` and UGA `3994`. They are mirrors of one provider, not independent operators. |
+| Initial core adapter run, about 01:41 UTC | Six enabled cases (three nodes × two systems) passed, including served-stop ETA batches. That run contained 16 deterministic cases plus six live cases and completed in 9.80 seconds. |
+| Expanded live actions, about 01:53 UTC | Four complete cases passed. UGA selected-stop ETA calls on replicas 2/3 returned HTTP 403; immediate direct checks of those exact URLs returned HTTP 200. A targeted repeat of the two affected complete cases passed at 01:55 UTC in 4.32 seconds. All six expanded mirror/system cases have passed, but this was not one uninterrupted all-green run. |
+| Extra action responses | Identity/version/groups, selected bus lookup, stop timetable and operator comparison returned JSON. HTTP 200 can still mean an empty search or no usable suggested journey. Timetable labels did not prove dates; some comparison route IDs/durations were absent and remain unknown. |
+| Passio GPS time | Bus rows supplied local 12-hour clock labels without a date/offset. Absolute GPS freshness was unknown; fetching did not create a new measurement time. |
+| Passio ETA time | Epoch-second and explicitly UTC fields were parsed. `solidEta.updatedUtc`/row `updatedUtc` supplied original update times where present; many batch rows lacked them. A scheduled departure timestamp was not evidence of live dwell. |
+
+### Georgia identity review
+
+Read-only requests around 01:31–01:37 UTC compared all 35 UGA catalogs/tracking patterns, Athens InfoPoint authority `58` catalog/details/stops, and Passio `3994` catalog/topology/vehicles. The [crosswalk](../src/data/athens-crosswalk.json) records 44 raw-response hashes and explicit aliases; [replication-evidence.md](replication-evidence.md) records the matching method and raw-field pitfalls.
+
+- Seventeen campus route identities were proved through Passio group IDs; every current UGA campus sequence matched one explicit Passio variant. Extra variants stayed separate.
+- Eighteen county routes matched InfoPoint identities and topology. Thirty-two city direction pairs matched complete order; four differed and remain conflicts. Raw UGA city directionId `1` corresponded to InfoPoint `O`, and `0` to `I`, despite misleading direction names.
+- All 608 reviewed current stop aliases had exact shared coordinates: 494 county and 114 campus. Compatible names and explicit IDs supplied additional identity evidence. The older static data included serious coordinate errors, so numeric suffixes/static proximity alone were not trusted.
+- Eight observed campus vehicle IDs matched Passio `busId`; eleven county IDs matched InfoPoint `VehicleId`. Device IDs, fleet display names and trip namespaces were not substituted for these identities.
+- Some matching fleet reports differed substantially in position, heading or route assignment. The review established identity, not agreement on every current field.
+
+UGA campus↔Passio and county↔InfoPoint each have at most two overlapping Georgia channels. Exact shared source values suggest common upstream data; independence was not established. Ohio and unrelated InfoPoint agencies cannot supply a third vote.
+
+### Implemented correctness and saved-data checks
+
+The extension distinguishes route publication from current service: InfoPoint visibility and Passio map/archive flags are not votes against UGA's current operation flags. Publication-only planning requires current vehicle/prediction evidence with an original time. Explicit scheduled labels remain scheduled even when an API also populates ETA/EDT fields.
+
+[replication-merge.test.ts](../tests/replication-merge.test.ts) covers two-of-three outliers, single-source fallback, nonaveraging, original age, nested cached provenance, complete directed sequences, loop abstention, schedule/ETA/EDT conflicts, known-run identity and bidirectional ambiguity. [replication-service.test.ts](../tests/replication-service.test.ts) covers crawling, schema/storage guards and coordinator fallback; [crosswalk.test.ts](../tests/crosswalk.test.ts) checks captured identity boundaries and the UGA `directionId` regression.
+
+A scoped run at 02:07:58 UTC passed **49 merge tests plus nine crosswalk tests** and the TypeScript check. Subsequent final changes require the full acceptance commands again; this scoped run does not prove the complete application, final browser behavior or production deployment. Final counts/status belong in [verification.md](verification.md).
+
+The Passio adapter's recorded deterministic run passed 22 cases, with six expanded live cases opt-in. Ordinary CI skips live calls. Reproduce deliberately:
+
+```sh
+npx vitest run tests/passio.test.ts tests/crosswalk.test.ts tests/replication-merge.test.ts tests/replication-service.test.ts
+LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
+LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
+```
+
+Provider comparison coordinates are sent only by an explicit action, are not saved in snapshots or client/edge caches, and are not written into request-log bodies. Provider HTTP rejection, empty responses and missing values remain visible. Local runtime and fixture evidence do not establish continuous availability, an independent physical measurement consensus, or a Cloudflare production deployment.

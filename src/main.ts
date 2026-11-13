@@ -1,5 +1,6 @@
 import './style.css';
-import { TransitService, UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from './api';
+import { UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from './api';
+import { createTransitService, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
 import { planJourney, parseCoordinate } from './planner';
 import { TransitMap } from './map';
 import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
@@ -7,8 +8,8 @@ import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehic
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const center = { lat: 33.948, lon: -83.377 };
-let agency: Agency = UGA_AGENCY;
-let service = new TransitService(agency);
+let agency: Agency = GEORGIA_AGENCY;
+let service = createTransitService(agency);
 let routes: Route[] = [];
 let view: 'routes' | 'detail' | 'plan' | 'agencies' = 'routes';
 let detail: RouteDetail | undefined;
@@ -26,6 +27,9 @@ let selectedStop: StopDetail | undefined;
 let stopOperation = 0;
 let planning = false;
 let agencyRevision = 0;
+let crawling = false;
+let comparisonRevision = 0;
+const crawled = new WeakSet<object>();
 
 app.innerHTML = `
   <a href="#main" class="skip-link">Skip to content</a>
@@ -34,8 +38,9 @@ app.innerHTML = `
     <nav aria-label="Main navigation"><button data-nav="routes">Routes</button><button data-nav="plan">Plan a trip <span aria-hidden="true">↗</span></button><button data-nav="agencies">Networks</button></nav>
     <div class="place"><span class="status-dot"></span><span id="agency-name">${e(agency.name)}</span></div>
   </div></header>
+  <aside class="source-bar" aria-label="Data reliability"><details id="data-sources"><summary id="source-summary">Checking transit sources…</summary><div id="source-status"></div><div class="source-actions"><button class="button" id="sync-data">Sync all sources</button><button class="button" id="provider-info">Provider information</button></div><p class="help-text">Matching reports take precedence. One healthy source can serve as backup. Replicas may share an upstream; agreement does not guarantee accuracy.</p><div id="sync-status" role="status"></div><div id="provider-details"></div></details></aside>
   <main id="main" tabindex="-1"></main>
-  <footer><strong>tranuga.</strong><span>Independent transit explorer · Data from UGA &amp; Avail InfoPoint</span><span>Times are estimates. Check operator alerts before travel.</span></footer>
+  <footer><strong>tranuga.</strong><span>Independent explorer · UGA, Avail InfoPoint &amp; Passio</span><span>Times are estimates. Check operator alerts before travel.</span></footer>
   <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>`;
 
 const main = document.querySelector<HTMLElement>('#main')!;
@@ -52,6 +57,29 @@ function setView(next: typeof view) {
   }
 }
 function focusTitle() { main.querySelector<HTMLElement>('h1')?.focus({ preventScroll: true }); }
+function renderReplication() {
+  const report = service.report;
+  $('#source-summary').textContent = `${report.healthy}/${report.total} ${report.mode === 'replicas' ? 'backend replicas' : 'data feeds'} responding · Data sources`;
+  $('#source-status').innerHTML = report.sources.map(source => `<div class="source-row"><strong>${e(source.label)}</strong><span class="source-state ${source.state}">${e(source.state === 'healthy' ? 'Available' : source.state === 'degraded' ? 'Partly available' : source.state === 'cached' ? 'Saved backup' : 'Unavailable')}</span><small>${e(source.detail || source.error || (source.lastSuccessAt ? `Checked ${clockTime(source.lastSuccessAt)}` : ''))}</small></div>`).join('') + `<p class="help-text">Last comparison: ${report.agreements} matching records · ${report.conflicts} disagreements · ${report.cached} saved records. ${report.mode === 'replicas' ? 'Two of three matching replicas corroborate a record.' : agency.kind === 'uga' ? 'Georgia campus and city routes each have two comparable channels; other feeds do not count as votes for missing coverage.' : 'This agency has one configured feed, with saved last-good data for short outages.'}</p>`;
+  $<HTMLButtonElement>('#provider-info').hidden = !service.hasPassioFor();
+}
+$('#sync-data').onclick = async () => {
+  const current = service; const button = $<HTMLButtonElement>('#sync-data'); button.disabled = true;
+  $('#sync-status').textContent = 'Crawling configured feeds, stops and predictions…';
+  try { const result = await current.sync(); if (service !== current) return; if (view === 'routes') { routes = result.routes; renderRouteCards(); } $('#sync-status').textContent = `Merged ${result.routes.length} routes, ${result.stops.length} stops and ${result.vehicles.length} reported buses. ${result.warnings.join(' ')}`; }
+  catch (error) { if (service === current) $('#sync-status').textContent = errorMessage(error); }
+  finally { if (service === current) { button.disabled = false; renderReplication(); } }
+};
+$('#provider-info').onclick = async () => {
+  const current = service; $('#provider-details').textContent = 'Loading provider information…';
+  try { const info = await current.getSystemInfo(); if (service !== current) return; $('#provider-details').innerHTML = `<h3>${e(info.name)}</h3><p class="help-text">Agency ${e(info.id)} · Web API version ${e(info.version || 'unavailable')} · ${info.routeGroups.length} route variants in the grouped chooser.</p><ul class="provider-groups">${info.routeGroups.map(group => `<li>${e(group.name)} <small>(${e(group.variantId)})</small></li>`).join('')}</ul>`; }
+  catch (error) { if (service === current) $('#provider-details').textContent = errorMessage(error); }
+  finally { if (service === current) renderReplication(); }
+};
+async function crawlLive() {
+  if (crawling || document.hidden) return; const current = service; crawling = true;
+  try { await current.crawlLive(); } finally { crawling = false; if (service === current) renderReplication(); }
+}
 
 document.querySelectorAll<HTMLButtonElement>('[data-nav]').forEach(button => button.onclick = () => {
   if (button.dataset.nav === 'routes') void showRoutes();
@@ -85,17 +113,18 @@ async function showRoutes(refresh = false) {
       $('#catalog-status').innerHTML = `<div class="notice error" role="alert">${e(errorMessage(error))} Use refresh to try again.</div>`;
     }
   }
-  if (token === operation) renderRouteCards();
+  if (token === operation) { renderRouteCards(); renderReplication(); if (!crawled.has(service)) { crawled.add(service); void crawlLive(); } }
 }
 
 function renderRouteCards() {
   if (view !== 'routes') return;
   const query = $<HTMLInputElement>('#route-search').value.trim().toLowerCase();
   const activeOnly = $<HTMLInputElement>('#active-only').checked;
-  const filtered = routes.filter(route => (!activeOnly || route.active) && `${route.name} ${route.shortName} ${route.id}`.toLowerCase().includes(query));
-  $('#route-count').textContent = `${routes.length} routes · ${routes.filter(r => r.active).length} active${catalogTime ? ` · Checked ${clockTime(catalogTime)}` : ''}`;
+  const confirmed = (route: Route) => route.active && route.availability !== 'published' && route.availability !== 'unknown';
+  const filtered = routes.filter(route => (!activeOnly || confirmed(route)) && `${route.name} ${route.shortName} ${route.id}`.toLowerCase().includes(query));
+  $('#route-count').textContent = `${routes.length} routes · ${routes.filter(confirmed).length} active${catalogTime ? ` · Checked ${clockTime(catalogTime)}` : ''}`;
   $('#routes').innerHTML = filtered.map(route => `<button class="route-card" data-route="${e(route.id)}" style="--route-color:${safeColor(route.color)}">
-    <div class="card-top"><span class="route-badge">${e(route.shortName || route.id)}</span><span class="service-state ${route.active ? 'active' : ''}"><i></i>${route.active ? 'Active service' : 'Not active'}</span></div>
+    <div class="card-top"><span class="route-badge">${e(route.shortName || route.id)}</span><span class="service-state ${confirmed(route) ? 'active' : ''}"><i></i>${confirmed(route) ? 'Active service' : route.availability === 'published' || route.availability === 'unknown' ? 'Service unconfirmed' : 'Not active'}</span></div>
     <h3>${e(route.name)}</h3><div class="card-bottom"><span>View route &amp; stops</span><span class="card-arrow" aria-hidden="true">↗</span></div>
   </button>`).join('') || `<div class="empty">${routes.length ? 'No routes match your search.' : 'No routes available. Refresh to try again.'}</div>`;
   document.querySelectorAll<HTMLButtonElement>('[data-route]').forEach(button => button.onclick = () => void showRoute(button.dataset.route!));
@@ -114,7 +143,7 @@ async function showRoute(routeId: string) {
       <div id="service-messages">${warning(result.messages)}</div><div id="route-warnings">${warning(result.warnings)}</div>
       <div class="route-layout"><div class="map-wrap"><div id="route-map" class="map" role="region" aria-label="Route map with stops and bus directions"></div><div class="map-caption"><span><i class="legend-line" style="background:${safeColor(result.route.color)}"></i>Route</span><span>○ Stop</span><span>↑ Bus heading</span><span>Grey = stale position</span></div></div>
       <aside class="stop-panel"><div class="panel-heading"><h2>Along the way</h2><label class="sr-only" for="route-direction">Route direction</label><select id="route-direction"><option value="">All directions</option>${result.patterns.map(pattern => `<option value="${e(pattern.id)}">${e(pattern.direction)}</option>`).join('')}</select></div><div id="stop-detail" aria-live="polite"></div><div id="route-stops"></div></aside></div>
-      <div class="vehicles-section"><h2>On the road</h2><p class="muted">Positions refresh every 15 seconds. Arrows show the reported heading.</p><div id="vehicle-list" class="vehicle-list"></div></div>`;
+      <div class="vehicles-section"><h2>On the road</h2><p class="muted">Positions refresh every 15 seconds. Arrows show the reported heading.</p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
     map = new TransitMap($('#route-map'), agency.center || center);
     map.showRoute(result, stop => void showStop(stop));
     $<HTMLSelectElement>('#route-direction').onchange = event => {
@@ -123,6 +152,13 @@ async function showRoute(routeId: string) {
       renderStops();
     };
     renderStops(); renderVehicles(); focusTitle();
+    renderReplication();
+    document.querySelector<HTMLFormElement>('#bus-search')?.addEventListener('submit', async event => {
+      event.preventDefault(); const query = $<HTMLInputElement>('#bus-query').value.trim(); $('#bus-search-result').textContent = 'Looking up that bus…';
+      try { const buses = await service.searchBuses(query); if (token !== operation || $<HTMLInputElement>('#bus-query').value.trim() !== query) return; $('#bus-search-result').innerHTML = buses.map(bus => `<p>Bus ${e(bus.id)} · ${e(routes.find(route => route.id === bus.routeId)?.name || bus.routeId)} · ${e(headingLabel(bus.heading))} · ${e(vehicleAge(bus.updatedAt))}</p>`).join('') || '<p>No matching bus is reported by the provider.</p>'; }
+      catch (error) { if (token === operation) $('#bus-search-result').textContent = errorMessage(error); }
+      finally { if (token === operation) renderReplication(); }
+    });
     void service.getMessages().then(messages => { if (token === operation) $('#service-messages').innerHTML = warning([...new Set([...result.messages, ...messages])]); }).catch(error => { if (token === operation) $('#service-messages').innerHTML += warning([`Service alerts could not be loaded: ${errorMessage(error)}`]); });
   } catch (error) {
     if (token === operation) $('#route-detail').innerHTML = `<div class="notice error" role="alert">${e(errorMessage(error))}</div><button class="button" id="retry-route">Retry route</button>`;
@@ -148,8 +184,14 @@ async function showStop(stop: Stop) {
     const result = await service.getStop(stop.id);
     if (token !== operation || stopToken !== stopOperation || view !== 'detail') return;
     selectedStop = result;
-    $('#stop-detail').innerHTML = `<div class="stop-arrivals"><div class="eyebrow">STOP ${e(stop.id)}</div><h3>${e(result.stop.name || stop.name)}</h3>${result.departures.filter(d => d.arrivalTime >= Date.now() - 30000).sort((a, b) => a.arrivalTime - b.arrivalTime).slice(0, 10).map(dep => `<div class="arrival-row"><span>${e(routes.find(r => r.id === dep.routeId)?.shortName || dep.routeId)} ${e(dep.direction || '')}</span><strong>${arrivalLabel(dep.arrivalTime)}</strong><small>${dep.scheduled ? 'Scheduled' : 'Predicted'} · ${clockTime(dep.arrivalTime)}</small></div>`).join('') || '<p>No upcoming predictions are available for this stop.</p>'}<button class="text-button" id="stop-as-origin">Start a trip here ↗</button></div>`;
+    $('#stop-detail').innerHTML = `<div class="stop-arrivals"><div class="eyebrow">STOP ${e(stop.id)}</div><h3>${e(result.stop.name || stop.name)}</h3>${result.departures.filter(d => d.arrivalTime >= Date.now() - 30000).sort((a, b) => a.arrivalTime - b.arrivalTime).slice(0, 10).map(dep => `<div class="arrival-row"><span>${e(routes.find(r => r.id === dep.routeId)?.shortName || dep.routeId)} ${e(dep.direction || '')}</span><strong>${arrivalLabel(dep.arrivalTime)}</strong><small>${dep.scheduled ? 'Scheduled' : 'Predicted'} · ${clockTime(dep.arrivalTime)}</small></div>`).join('') || '<p>No upcoming predictions are available for this stop.</p>'}<button class="text-button" id="stop-as-origin">Start a trip here ↗</button>${service.hasPassioFor(detail?.route.id, stop.id) ? '<br><button class="text-button" id="show-timetable">Provider timetable</button><div id="stop-timetable"></div>' : ''}</div>`;
     $('#stop-as-origin').onclick = () => { origin = selectedStop!.stop; showPlanner(); };
+    document.querySelector<HTMLButtonElement>('#show-timetable')?.addEventListener('click', async () => {
+      $('#stop-timetable').textContent = 'Loading timetable…';
+      try { const timetable = await service.getTimetable(stop.id, detail?.route.id); if (token !== operation || stopToken !== stopOperation) return; $('#stop-timetable').innerHTML = `<p>${timetable.times.length ? timetable.times.map(time => e(time)).join(' · ') : 'No next clock times are supplied.'}</p><small>Provider clock times${timetable.timezone ? ` · ${e(timetable.timezone)}` : ''}. Dates and live availability are not implied.</small>`; }
+      catch (error) { if (token === operation && stopToken === stopOperation) $('#stop-timetable').textContent = errorMessage(error); }
+    });
+    renderReplication();
   } catch (error) {
     if (token === operation && stopToken === stopOperation) $('#stop-detail').innerHTML = `<div class="notice error" role="alert">${e(errorMessage(error))}</div>`;
   }
@@ -170,7 +212,7 @@ function showPlanner() {
       <label class="field-label" for="max-walk">Maximum walk to / from the bus</label><select id="max-walk"><option value="800">800 m · about 10 minutes</option><option value="1200" selected>1.2 km · about 15 minutes</option><option value="2000">2 km · about 25 minutes</option></select>
       <button class="button primary full" type="submit" id="find-trip">Find quickest bus trip <span aria-hidden="true">↗</span></button>
       <p class="help-text">Use decimal coordinates or click the map. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
-      </fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div></aside>
+      </fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
       <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div></div></div>
       <div class="notice planning-note"><strong>Fastest under the available data.</strong><p>The planner compares directed bus trips, walking and transfers. Missing predictions use a 7.5-minute wait and estimated bus travel. Trips are estimates, not a timetable guarantee. Only routes marked active are used.</p></div></section>`;
   map = new TransitMap($('#trip-map'), agency.center || center, point => {
@@ -198,10 +240,19 @@ function showPlanner() {
   };
   $('#locate').onclick = () => void locateUser();
   $<HTMLFormElement>('#trip-form').onsubmit = event => { event.preventDefault(); void findTrip(); };
+  document.querySelector<HTMLButtonElement>('#compare-provider')?.addEventListener('click', async () => {
+    const token = operation; const revision = ++comparisonRevision;
+    const from = parseCoordinate($<HTMLInputElement>('#trip-origin').value), to = parseCoordinate($<HTMLInputElement>('#trip-destination').value);
+    if (!from || !to) { $('#operator-result').textContent = 'Enter valid start and destination coordinates first.'; return; }
+    const button = $<HTMLButtonElement>('#compare-provider'); button.disabled = true; $('#operator-result').textContent = 'Requesting operator suggestions…';
+    try { const comparison = await service.compareJourney(from, to); if (token !== operation || revision !== comparisonRevision) return; $('#operator-result').innerHTML = comparison.routes.map(route => `<article><h3>${e(route.label)}</h3><p>${route.durationSeconds !== undefined ? `${Math.ceil(route.durationSeconds / 60)} min` : 'Duration unavailable'}${route.transfers !== undefined ? ` · ${route.transfers} transfers` : ''}</p><ol>${route.legs.map(leg => `<li>${e(leg.mode === 'ride' ? leg.routeName || 'Bus' : 'Walk')}${leg.fromStopName ? ` · ${e(leg.fromStopName)} → ${e(leg.toStopName || '')}` : ''}</li>`).join('')}</ol></article>`).join('') || '<p>The provider returned no transit suggestion for these points.</p>'; $('#operator-result').innerHTML += warning(comparison.warnings); }
+    catch (error) { if (token === operation && revision === comparisonRevision) $('#operator-result').textContent = errorMessage(error); }
+    finally { if (token === operation) button.disabled = false; }
+  });
   focusTitle();
 }
 
-function resetTripResult() { $('#trip-result').innerHTML = ''; $('#trip-status').innerHTML = ''; map?.clearJourney(); }
+function resetTripResult() { $('#trip-result').innerHTML = ''; $('#trip-status').innerHTML = ''; comparisonRevision++; const comparison = document.querySelector('#operator-result'); if (comparison) comparison.innerHTML = ''; map?.clearJourney(); }
 
 function choosePoint(kind: 'origin' | 'destination') {
   pickMode = kind;
@@ -255,17 +306,20 @@ async function findTrip() {
     announce(`Trip found. ${Math.ceil(trip.durationSeconds / 60)} minutes, arriving ${clockTime(trip.arrivalTime)}.`);
   } catch (error) {
     if (token === operation) $('#trip-status').innerHTML = `<div class="notice error" role="alert">${e(errorMessage(error))}</div>`;
-  } finally { if (token === operation) { planning = false; fields.disabled = false; } }
+  } finally { if (token === operation) { planning = false; fields.disabled = false; renderReplication(); } }
 }
 
 async function showAgencies() {
   setView('agencies'); const token = operation; const revision = ++agencyRevision;
   main.innerHTML = `<section class="container networks-page"><div class="eyebrow">BEYOND CAMPUS</div><div class="page-heading"><div><h1 tabindex="-1">Find your network<span>.</span></h1><p>Start with UGA or explore an agency connected to myStop / InfoPoint.</p></div></div>
     <button class="network-home" id="select-uga"><span class="route-badge">UGA</span><span><strong>University of Georgia</strong><small>Athens, Georgia · Default network</small></span><span aria-hidden="true">↗</span></button>
+    <div class="network-presets"><button class="network-home" id="select-ohio"><span class="route-badge">OH</span><span><strong>Athens Public Transit</strong><small>Athens, Ohio · Passio · Three backend replicas</small></span><span aria-hidden="true">↗</span></button><button class="network-home" id="select-passio-uga"><span class="route-badge">GA</span><span><strong>UGA on Passio</strong><small>Campus only · Three backend replicas</small></span><span aria-hidden="true">↗</span></button></div>
     <div class="network-tools"><label class="search"><span aria-hidden="true">⌕</span><input id="agency-search" placeholder="Search agencies" aria-label="Search agencies"></label><button class="button" id="nearby-agencies">⌖ Find nearby</button><form id="code-form"><label class="sr-only" for="agency-code">Authority code</label><input id="agency-code" placeholder="Authority code" required maxlength="50"><button class="button" type="submit">Find by code</button></form></div>
     <div id="agency-status" role="status">Loading the authority directory…</div><div id="agencies" class="agency-grid"></div>
     <p class="help-text">Agency support and data quality vary. Discovery comes from the operator’s original HTTP directory through our gateway. Newly added agency hosts need gateway approval before use.</p></section>`;
   $('#select-uga').onclick = () => void selectAgency(UGA_AGENCY);
+  $('#select-ohio').onclick = () => void selectAgency(PASSIO_ATHENS_AGENCY);
+  $('#select-passio-uga').onclick = () => void selectAgency(PASSIO_UGA_AGENCY);
   $('#agency-search').oninput = renderAgencies;
   $('#nearby-agencies').onclick = () => void searchAgencies('nearby');
   $<HTMLFormElement>('#code-form').onsubmit = event => { event.preventDefault(); void searchAgencies('code'); };
@@ -292,8 +346,9 @@ function renderAgencies() {
 }
 
 async function selectAgency(choice: Agency) {
-  agency = choice; service = new TransitService(agency); routes = []; network = undefined; detail = undefined; origin = undefined; destination = undefined;
+  agency = choice.kind === 'uga' ? GEORGIA_AGENCY : choice; service = createTransitService(agency); routes = []; network = undefined; detail = undefined; origin = undefined; destination = undefined;
   $('#agency-name').textContent = agency.name;
+  $('#sync-status').textContent = ''; $('#provider-details').textContent = ''; $<HTMLButtonElement>('#sync-data').disabled = false; renderReplication();
   await showRoutes(true);
 }
 
@@ -305,10 +360,13 @@ window.setInterval(async () => {
     if (token !== operation || !detail) return;
     detail.vehicles = vehicles.filter(bus => bus.routeId === detail!.route.id);
     map?.showVehicles(detail.vehicles, detail.route.color); renderVehicles();
+    renderReplication();
     $('#route-warnings').innerHTML = warning(detail.warnings);
   } catch (error) {
     if (token === operation) $('#route-warnings').innerHTML = warning([`Live refresh failed: ${errorMessage(error)} Showing the last received positions.`]);
   } finally { pollBusy = false; }
 }, 15000);
+
+window.setInterval(() => { if (view !== 'agencies') void crawlLive(); }, 60000);
 
 void showRoutes();

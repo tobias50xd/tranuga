@@ -1,100 +1,123 @@
 # API inventory and feature map
 
-tranuga uses all **22 bus API URL patterns** documented in the original [API extraction notes](docs/api-extraction.md): six UGA/static-data patterns, three authority-discovery patterns, twelve InfoPoint patterns, and one KML pattern. Calls are used by the route, stop, network-selection, and journey-planning workflows; opening the home page does not issue every call at once.
+The shipped app integrates **33 read-query patterns**: the original six UGA/static patterns, three agency-discovery selectors, twelve InfoPoint endpoints and KML, plus eleven Passio patterns. The [README](README.md#complete-api-inventory-33-patterns) contains the complete method/query/body contracts and reproduction commands. This file maps every call to implemented and possible future features; future ideas are not shipped capabilities.
 
-The implementation has its own visual design. It does not import APK layouts, artwork, embedded map keys, login credentials, or ticket-purchasing integrations.
+The interface is original. APK visual designs/assets, embedded keys, account APIs, ticket purchasing, ride requests and push/device registration are excluded.
 
-## Implemented experience
+## Implemented features
 
-- The first page lists every route returned by the selected network, with names, colors and active state. Search and an optional active-only filter narrow the list.
-- Selecting a route opens a map with its road trace where supplied, available stops, direction selection, and reported buses. Heading arrows and update ages distinguish recent and stale positions.
-- Selecting a stop loads its predicted or scheduled arrivals and can make that stop the start of a journey.
-- The planner accepts decimal coordinates, map clicks, or browser geolocation. It compares directed active bus routes, walks and transfers, then shows the quickest journey under its stated timing model.
-- The Networks page supports the UGA default, the InfoPoint directory, coordinate-based agency discovery, authority-code lookup, and agency search. Each selected network has its own catalog and planner graph.
-- Provider failures produce retry states or specific warnings. Missing live data is never replaced with invented vehicles. Static-stop and approximate-geometry fallbacks are labeled.
+- Complete route catalog, search/filter, selected-route road traces and current stops/variants.
+- Reported bus position/heading, original update ages, stale/unknown-age labels and selected-stop arrivals.
+- Arbitrary map or decimal-coordinate endpoints, requested geolocation, endpoint swapping and directed bus journey estimation with walks, waits and transfers.
+- Combined reviewed Georgia channels, separate Ohio Passio and other InfoPoint networks, explicit ID aliases, three-node Passio comparison, source health and bounded saved fallback.
+- Visible-tab lightweight refresh, explicit full-network synchronization and source/provenance/conflict status.
+- Passio provider name/software version/route groups, explicit bus search, provider timetable clock labels and a separate requested operator transit comparison.
+- Static production assets, restricted read-only gateway, GitHub Actions verification/deployment workflow and desktop/mobile feature checks.
 
-## UGA endpoints — six patterns
+“Active now” differs from “published in a route catalog.” Publication flags abstain from current-service decisions; a publication-only fallback needs a fresh reported vehicle or a credible nonscheduled arrival with an original update time. Unknown, stale and contradictory topology cannot silently manufacture planning service. See [replication.md](docs/replication.md).
 
-All calls are public `GET` requests. Live-data paths are relative to `https://my.uga.edu/`.
+## Bases and bodies
 
-| # | URL pattern | Current use in tranuga | Further features the data could support |
+- `U = https://my.uga.edu/v4_19/cache`
+- `S = https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data`
+- `D = http://mobilegateway.rideralerts.com/gateway/TransitAuthorities`
+- `I = {discovered and reviewed RestUrl}`, such as `https://bustracker.accgov.com/InfoPoint/rest` or CATA's `https://realtime.catabus.com/InfoPoint/rest`.
+- `P = https://passiogo.com`, `https://replicated2of3.passiogo.com` or `https://replicated3of3.passiogo.com`.
+- `sid = "5842"` for Athens Public Transit **Ohio**, or `"3994"` for UGA **Georgia**. These systems are never aliases.
+- Passio JSON bodies: `R = {"systemSelected0":"{sid}","amount":1}`, `B = {"s0":"{sid}","sA":1}`, `A = {"systemSelected0":"{sid}","amount":1,"routesAmount":0}`. `W` is the exact two-point transit payload in the README. Every POST requires `Content-Type: application/json`.
+
+## UGA and static data — six patterns
+
+| # | Method and request | Implemented use | Possible further features |
 | --- | --- | --- | --- |
-| 1 | `v4_19/cache/Routes` | Home-page catalog, names, colors, active state, and the active-route filter used by planning. UGA and Athens classifications are supplied by the source. | Saved route favorites; UGA/Athens agency filters; route availability history. |
-| 2 | `v4_19/cache/Buses` | Vehicle markers and heading arrows, bus cards, original update times, route association, and planning freshness context. Refreshed while a route is visible. | Occupancy indicators where valid; next-stop cards; vehicle-follow mode; estimated headway displays. |
-| 3 | `v4_19/cache/routeTracking_{routeId}` | Current ordered route stops and arrival predictions when opening a route; all active routes' current stop sequences and predictions when planning. | Stop-level arrival badges directly in the route list; missed-bus notifications; route-level wait comparisons. |
-| 4 | `v4_19/cache/stop_{stopId}` | Arrival panel for a selected stop, grouped into normalized route/direction predictions. | Saved stops; arrival countdown widgets; departure-board view; opt-in arrival notifications. |
-| 5 | `https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/version.json` | Checks the static topology version before loading or reusing the session's network dataset. | A visible dataset-version/status panel; version-change notifications; controlled offline dataset updates. |
-| 6 | `https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/busData.json` | Stop directory, encoded road geometry, static ordered-stop fallback, and evidence for loop closure. Current live tracking takes priority for stop order. | Downloadable offline network maps; stop-area exploration; topology comparison across dataset versions. |
+| 1 | GET `U/Routes` | All UGA/county routes, names/colors and current-service flags. | Route favorites; operator filters; observed service history. |
+| 2 | GET `U/Buses` | Fleet location/heading, route association, original timestamps and refresh. | Occupancy where reliable; next-stop cards; vehicle-follow mode. |
+| 3 | GET `U/routeTracking_{routeId}` | Current ordered stops, native directions, route predictions and planning. | Stop arrival badges on route cards; route wait comparisons. |
+| 4 | GET `U/stop_{stopId}` | Selected-stop predictions; numeric campus and `c`-prefixed county IDs. | Favorites; departure-board widgets; explicit opt-in arrival reminders. |
+| 5 | GET `S/version.json` | Static dataset version checks. | Dataset change summaries and controlled offline refresh. |
+| 6 | GET `S/busData.json` | Shapes, stops, trip/route mappings, static fallback and loop evidence. | Offline network maps; topology version comparison; coverage analysis. |
 
-UGA route-tracking prediction arrays do not identify an individual vehicle or trip for every arrival. The planner can use these for boarding waits, but it does not claim that corresponding array positions at different stops prove the same bus run. Downstream times are estimated when run identity is unavailable.
+Current `routeTracking` stops take precedence over older static positions/order. Campus responses can use `direction`; county tracking uses `directionId`, while stop prediction groups can still use `direction`. Native direction labels are not enough to cross-map providers: reviewed county direction `1` corresponds to InfoPoint `O`, and `0` to `I`, based on actual ordered stops. UGA prediction-array positions do not establish common run identity.
 
-## Authority discovery — three patterns
+## InfoPoint discovery — three selectors
 
-The recovered directory base is `http://mobilegateway.rideralerts.com/gateway/TransitAuthorities`. The production browser calls the same-origin gateway over HTTPS; the gateway makes the documented HTTP upstream discovery request.
-
-| # | URL pattern | Current use in tranuga | Further features the data could support |
+| # | Method and request | Implemented use | Possible further features |
 | --- | --- | --- | --- |
-| 7 | `/gateway/TransitAuthorities` | Networks-page agency directory and each agency's InfoPoint `RestUrl`. | Favorite agencies; agency coverage map; automatic agency suggestions. |
-| 8 | `/gateway/TransitAuthorities/Locate?Lat={lat}&long={lon}` | Find nearby on the Networks page, after the user requests browser geolocation. The parameter is lowercase `long`. | Nearby-network suggestions after a map click; explicit out-of-coverage guidance. |
-| 9 | `/gateway/TransitAuthorities/?includeHiddenPropertyCode=@{code}` | Find by code on the Networks page. The client URL-encodes the `@` selector and user-entered code. | Shareable agency-selection links; organization-specific network shortcuts. |
+| 7 | GET `D` | Agency directory and reviewed `RestUrl` selection. | Favorite networks; agency coverage map. |
+| 8 | GET `D/Locate?Lat={lat}&long={lon}` | Explicit nearby-agency lookup. | Map-based agency suggestions after user selection. |
+| 9 | GET `D/?includeHiddenPropertyCode=%40{code}` | Explicit authority/property-code lookup. | Shareable network shortcuts. |
 
-An authority code selects directory data; it is not a bearer token. The endpoint may return the normal directory plus additional matching properties rather than one exact match. Directory metadata cannot expand the gateway's approved host list. The committed [agency registry](src/data/authorities.json) contains the 73 authorities observed during validation; adding a new upstream requires a reviewed source change.
+The code selector is not authentication and may return more than one authority. The original directory uses HTTP on the gateway-to-provider hop. Dynamic metadata cannot expand the committed gateway origin registry; 73 observed authority roots are reviewed, not individually guaranteed compatible.
 
-## InfoPoint endpoints — twelve patterns
+## InfoPoint data — twelve endpoints and KML
 
-`{restBase}` comes from the selected authority's `RestUrl`, subject to the gateway's committed registry. For example, the validated CATA base was `https://realtime.catabus.com/InfoPoint/rest`. IDs and direction codes are read from the chosen network rather than assumed to be portable between agencies.
-
-| # | URL relative to `{restBase}` | Current use in tranuga | Further features the data could support |
+| # | Method and request | Implemented use | Possible further features |
 | --- | --- | --- | --- |
-| 10 | `/TransitAuthorityConfig/Get` | Loads agency configuration and its `BaseUrl`/`KmlUrl` geometry location while loading the route catalog. | Agency-specific map bounds/starting zoom; operator-driven refresh settings; capability-aware controls. |
-| 11 | `/Routes/GetAllRoutes` | Complete agency catalog, including routes outside the visible set. Merged with visible routes to determine active state. | Route groups; seasonal-route browsing; availability summaries. |
-| 12 | `/Routes/GetVisibleRoutes` | Current visible-service set, embedded live vehicles and route messages; the vehicle refresh source for InfoPoint route views. | Vehicle occupancy and destination badges; current headway estimates; route-specific alerts on catalog cards. |
-| 13 | `/RouteDetails/Get/{routeId}` | Selected route's directions, stop relations, messages, trace filename and current vehicles. | Detailed route information sheets; detour summaries; printable route pages. |
-| 14 | `/RouteDetails/GetAllRouteDetails` | Complete directed route topology for the selected network's planner, filtered to active routes. | Network-wide service coverage analysis; transfer-hub views; topology consistency checks. |
-| 15 | `/RouteDetails/GetDirectionsByRouteID/{routeId}` | Discovers the selected route's direction codes before requesting each direction's current stop directory. | Human-readable direction descriptions; direction-specific share links; remembered direction preferences. |
-| 16 | `/RouteDetails/GetStopsForRouteDirection/?routeid={routeId}&direction={direction}&timepointsOnly=false` | Refreshes names/coordinates for each selected route direction. Route-stop sort order remains authoritative for ride edges. | A timepoints-only view; direction-specific stop search; timepoint labeling. |
-| 17 | `/Stops/GetAllStops` | Stop coordinates/names for full-network journey planning. | Nearby-stop finder; stop search; accessible station-area summaries when supporting data exists. |
-| 18 | `/Stops/GetAllStopsForRoutes?routeIDs={routeIds}` | Loads the selected route's stop set, supplementing route detail and direction data. The builder also supports comma-separated route ID lists. | Multi-route stop overlays; shared-stop comparisons; transfer-stop highlighting. |
-| 19 | `/Stops/Get/{stopId}` | Selected stop's current name and position before displaying arrivals. | Shareable stop detail views; location correction reports through a separately authorized channel. |
-| 20 | `/StopDepartures/Get/{stopId}` | Selected-stop arrivals; when planning, predictions for every stop served by the active directed network. Preserves trip IDs, direction codes, arrival ETA and departure EDT separately. | Full departure boards; trip-following views; connection reliability estimates using collected history. |
-| 21 | `/PublicMessages/GetCurrentMessages` | Public service notices on selected-route views and in the planning network. Plain text is rendered safely. | An alerts inbox; route-filtered notices; opt-in alert notifications. |
+| 10 | GET `I/TransitAuthorityConfig/Get` | Selected-authority settings and approved trace location. | Capability-aware controls; operator map bounds and refresh settings. |
+| 11 | GET `I/Routes/GetAllRoutes` | Complete agency catalog and embedded vehicles. | Seasonal/grouped route browsing. |
+| 12 | GET `I/Routes/GetVisibleRoutes` | Published route set, buses and route notices. | Occupancy/destination badges; catalog alerts. |
+| 13 | GET `I/RouteDetails/Get/{routeId}` | Route stops/directions, vehicles, notices and trace filename. | Printable route sheets; detour summaries. |
+| 14 | GET `I/RouteDetails/GetAllRouteDetails` | Complete directed topology for network planning. | Transfer-hub/coverage analysis; topology consistency tools. |
+| 15 | GET `I/RouteDetails/GetDirectionsByRouteID/{routeId}` | Actual native direction codes. | Direction-specific links and preferences. |
+| 16 | GET `I/RouteDetails/GetStopsForRouteDirection/?routeid={routeId}&direction={direction}&timepointsOnly=false` | Direction stop metadata; `RouteStops.SortOrder` supplies ride order. | Timepoint-only view; direction stop search. |
+| 17 | GET `I/Stops/GetAllStops` | Full stop directory/coordinates for planning. | Nearby-stop search; station-area exploration. |
+| 18 | GET `I/Stops/GetAllStopsForRoutes?routeIDs={commaSeparatedRouteIds}` | Route-served stop set. | Multi-route overlays and shared-stop highlighting. |
+| 19 | GET `I/Stops/Get/{stopId}` | Selected-stop current details. | Shareable stop pages. |
+| 20 | GET `I/StopDepartures/Get/{stopId}` | Selected/network arrivals, ETA versus EDT, schedule/run identity and update ages. | Full departure boards; historical connection reliability. |
+| 21 | GET `I/PublicMessages/GetCurrentMessages` | Safely rendered public notices. | Alert inbox and explicit opt-in notice subscriptions. |
+| 22 | GET `{config.BaseUrl}{config.KmlUrl}{encodedTraceFilename}` | Reviewed KML road geometry; only `LineString` coordinates count. | Trace-distance overlays and printable maps. |
 
-There is no separate InfoPoint vehicle endpoint in the recovered API set. Vehicles are embedded in route responses. The API client uses all twelve endpoints above through purposeful catalog, route, stop and planning actions.
+There is no separate vehicle endpoint in this contract: vehicles are embedded in route responses. Unordered direction-stop arrays do not prove stop order. Missing traces produce labeled approximate connectors; missing ordered topology excludes the affected pattern from planning.
 
-## Route geometry — one pattern
+## Passio — eleven read queries
 
-| # | URL pattern | Current use in tranuga | Further features the data could support |
+| # | Method and request | Implemented use | Possible further features |
 | --- | --- | --- | --- |
-| 22 | `{config.BaseUrl}{config.KmlUrl}{urlEncodedRouteTraceFilename}` | Downloads selected InfoPoint route geometry. Only KML `LineString` coordinates become road traces. The gateway restricts requests to reviewed agency origins and the approved trace directory. | Direction-aware trace styling where geometry identifies direction; printable maps; distance-along-route displays. |
+| 23 | POST `P/mapGetData.php?getRoutes=1`, body `R` | Variant catalog, publication flags and explicit UGA group IDs. | Group favorites; seasonal/variant comparison. |
+| 24 | POST `P/mapGetData.php?getStops=2&withOutdated=1&wBounds=1&showBusInOos=0`, body `B` | Stops, complete ordered variants, return visits, separate road segments and groups. | Stop coverage layers; data-quality comparison; offline maps. |
+| 25 | POST `P/mapGetData.php?getBuses=1&speed=1`, body `B` | Fleet positions/headings and refresh; device keys are not bus IDs. | Occupancy where validated; vehicle following; headway observations. |
+| 26 | GET `P/mapGetData.php?eta=3&stopIds={ids}&userId={sid}` | Stop/route predictions and network batches of up to 40 stops; reviewed optional `routeId`/`position`. | Visit-specific arrival boards and run-following views. |
+| 27 | POST `P/goServices.php?getAlertMessages=1&alertCRC=na&noOptions=1`, body `A` | Plain-text public messages. | Route-filtered alert inbox and importance filters. |
+| 28 | GET `P/mapGetData.php?getSystems=2&sortMode=1&credentials=1&acronymId={sid}` | Selected provider's normalized name/identity information. | Verified coverage/bounds panel. |
+| 29 | GET `P/goServices.php?goWebVer=1` | Provider website software version. | Version-change diagnostics; compatibility notices. |
+| 30 | POST `P/mapGetData.php?getRoutes=2&sortMode=1&credentials=1`, body `R` | Actual route groups, representative variants and supplied stop counts. | Group-level navigation and cross-version group comparison. |
+| 31 | GET `P/mapGetData.php?schedule=4&routeId={variantId}&stopId={stopId}` | Explicit stop timetable with provider timezone and undated clock labels. | Printable schedules if complete dates/service calendars become available. |
+| 32 | POST `P/mapGetData.php?getBuses=2&search={encodedQuery}`, body `B` | Explicit bus-number/name lookup; unmatched searches stay empty. | Saved fleet searches; follow a selected matching bus. |
+| 33 | POST `P/mapGetData.php?walk=2`, body `W` | Explicit separate operator transit comparison; coordinates are not cached/persisted. | Explain differences between operator and local estimates, where identities/timing are supplied. |
 
-If a trace is unavailable, the map uses visibly dashed straight connectors between known stops and labels them approximate. Connectors do not prove a street route. A new agency configuration pointing to another host or trace directory requires review before it can be used through the gateway.
+`credentials=1` is a public query selector, not a secret. Native optional device IDs and account/write selectors are unnecessary and not permitted. Provider journey comparisons exclude driving alternatives, preserve missing route identities/durations, and use only explicit numeric duration fields. The application's independent bus planner is not replaced by, averaged with, or corroborated by these suggestions.
 
-## Request policy and validation
+Passio local clock-only bus timestamps do not prove an absolute GPS measurement time; those positions retain unknown freshness. UTC/epoch ETA fields are parsed only when the contract identifies the absolute time. Return visits and multiple variants are preserved. Disconnected trace pieces remain separate polylines. See [Passio contracts](docs/passio-api.md).
 
-The endpoint builders are in [src/api/endpoints.ts](src/api/endpoints.ts), the feature workflows in [src/api/index.ts](src/api/index.ts), and the gateway policy in [worker/index.ts](worker/index.ts).
+## Request, cache and crawl policy
 
-| Work | Browser request policy | Gateway caching |
+| Work | Client policy | Edge cache |
 | --- | --- | --- |
-| Live catalog/route predictions | On route/catalog load or explicit planning search; default client cache 15 seconds. | 10 seconds for live route, bus, prediction and public-message calls. |
-| Vehicle refresh | Every 15 seconds while a route view is visible; hidden tabs and overlapping polls are skipped. Vehicle client cache 10 seconds. | 10 seconds. |
-| Selected-stop arrivals | On stop selection; client cache 10 seconds. | 10 seconds. |
-| Planning network | Refreshed for each search. Requests within one session still honor endpoint cache TTLs. UGA tracking and InfoPoint stop-departure batches use at most four concurrent requests. | Endpoint-specific cache values apply. |
-| Static UGA data/version | Client cache 5 minutes; dataset reused while its version matches. | 1 hour. |
-| InfoPoint topology and stop directories | Client cache 5 minutes for all-route details and stop/direction directories; single-stop details 5 minutes. | 1 hour for stops/direction-stop data; 10 seconds for route-detail data. |
-| Agency configuration and KML | Client cache 1 hour. | 1 hour. |
-| Discovery | Client cache 1 hour for directory, 1 minute for locate/code lookups. | 1 hour, keyed by the exact URL including selector coordinates/code. |
-| Public notices | On route view and planning; client cache 1 minute. | 10 seconds. |
+| UGA live catalog/tracking | On feature/full crawl; default 15 s. | 10 s. |
+| Original vehicle refresh / selected stops | Route positions every 15 s visible; vehicle and selected-stop requests generally 10 s. | 10 s. |
+| Lightweight configured-source crawl | Catalogs, vehicles, alerts every 60 s visible; skips overlap/hidden tabs. | Endpoint-specific. |
+| Full network | Explicit sync or planner; each adapter caps route/stop calls or Passio ETA batches at four; each ETA batch has at most 40 stops. Mirrors run concurrently. | Endpoint-specific. |
+| UGA static/version | Client 5 min; dataset reused while version matches. | 1 h. |
+| InfoPoint config/KML | Client 1 h. | 1 h. |
+| InfoPoint topology/stop/direction directories | Client 5 min. | Stops/config/direction-stop 1 h; route detail/all-details 10 s. |
+| Discovery | Directory 1 h client; locate/code 1 min. | 1 h, keyed by exact selector URL. |
+| Passio catalog | Client 15 s default. | 1 min. |
+| Passio topology | Client 5 min. | 1 h. |
+| Passio buses/search and ETAs | Client 10 s. | 10 s. |
+| Public messages | Client 1 min. | 10 s. |
+| Passio provider information/version/groups | Identity/version 1 h; groups 5 min. | 1 h. |
+| Passio timetable | Client 1 min. | 1 h. |
+| Operator comparison | Explicit action; no client/edge cache or saved snapshot; coordinate bodies are not written to the request log. | `no-store`. |
+| Last-good normalized snapshots | At most 64 slots, 2,000,000-character persistence cap and 24 h static age. Cached active flags/predictions: 2 min eligibility; cached vehicle display: at most 5 min. | Browser storage, not edge state. |
 
-The browser transport coalesces identical in-flight reads and has a 15-second timeout. The gateway has a 12-second upstream timeout, an 8 MiB response limit, GET-only endpoint validation, no forwarded credentials/cookies, no redirect following, and validated JSON/KML responses. Limits and policies are tested in source; they do not make the upstream APIs contractual or continuously available.
+Identical requests coalesce. Browser timeout is 15 s; gateway upstream timeout is 12 s, response limit 8 MiB and validated POST body limit 8 KiB. Cache/body keys preserve system/action separation. Storage/schema failures do not convert corrupt data into valid fallback. `snapshotAt` and original measurement/update times are preserved through nested coordinators. There is no closed-browser/server cron crawler.
 
-No login token, API key, or app cookie is required by the recovered bus-data calls. The Cloudflare deployment token is a separate server-side GitHub Actions secret and is never included in the webapp. Embedded third-party configuration and unrelated fare APIs are outside this inventory.
+The full source/replica rules and tolerances are in [replication.md](docs/replication.md). The reviewed Georgia aliases cover at most two overlapping channels per route; unrelated InfoPoint agencies and Ohio never become extra Georgia votes.
 
-## What “quickest” means
+## Planning boundaries and future work
 
-The browser planner searches directed active-route patterns, access/egress walks and transfers. It considers reachable boarding stops rather than only the nearest one, keeps loop direction, checks prediction reachability, and uses matching run identity for downstream arrival anchors where possible. Its result is the earliest arrival under the available data and configured estimates, with walking/transfers as tie-breakers.
+The browser searches all feasible access/egress stops, directed active patterns, predicted waits, estimated following service and transfers. It preserves loop direction, considers later faster runs, and keeps nondominated arrival/transfer/walking states. Timing uses straight-line walking, declared bus estimates and a bounded horizon. It does not guarantee future service or accessible street paths.
 
-The current model considers live runs and estimated following service starting 7.5 minutes after readiness or the latest known departure, whichever is later. It estimates bus movement when run-specific timing is absent and uses straight-line walking distances, transfer buffers, and a bounded search horizon. It does not have a pedestrian street graph or a complete guaranteed timetable. Results expose their assumptions. Position reports older than two minutes, or without an update timestamp, are labeled as last known positions. Missing current UGA stop tracking or missing ordered InfoPoint topology excludes the affected route from planning rather than inventing ride edges.
+Possible additions include operator-approved GTFS/GTFS-Realtime schedules, pedestrian routing/accessibility data, service-calendar and last-bus checks, saved favorites, and explicitly authorized historical reliability collection. Notifications, user accounts, server-side scheduled crawling and geographic identity guesses are not shipped.
 
-Future work can improve this model with an operator-approved GTFS/GTFS-Realtime feed, a pedestrian routing graph, accessible-path data, timetable-backed last-service checks, and observed connection reliability. These are possible additions, not shipped features.
-
-See [API validation evidence](docs/api-validation.md) for the actual read-only probes, response observations, and reproducible deterministic/opt-in test commands. Provider paths, fields, IDs, active states and coverage can change.
+[API validation](docs/api-validation.md) and [verification evidence](docs/verification.md) distinguish executed dated checks from production publication. Undocumented provider paths, fields, IDs and coverage may change.
