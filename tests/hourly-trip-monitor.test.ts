@@ -1,0 +1,201 @@
+import { appendFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { ApiClient, UGA_AGENCY, ugaEndpoints } from '../src/api';
+import { normalizeRoutes, normalizeVehicles, uniqueStops } from '../src/api/normalize';
+import { ugaTopology } from '../src/api/topology';
+import { ATHENS_BOUNDS } from '../src/athens';
+import { distanceMeters, planJourney } from '../src/planner';
+import type { Coordinate, Journey, Network, RoutePattern, Stop } from '../src/types';
+
+const enabled = process.env.HOURLY_TRIP_CHECK === '1';
+const failuresFile = fileURLToPath(new URL('../trip_failure.md', import.meta.url));
+const maxWalkMeters = 1_200, maxTransferWalkMeters = 300;
+
+interface Failure { category: string; reason: string; context: Record<string, unknown> }
+
+function hash(value: string): number {
+  let result = 2166136261;
+  for (const character of value) result = Math.imul(result ^ character.charCodeAt(0), 16777619);
+  return result >>> 0;
+}
+
+function randomGenerator(seed: number) {
+  let state = seed || 1;
+  return () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 2 ** 32; };
+}
+
+function offset(point: Coordinate, meters: number, angle: number): Coordinate {
+  const latitude = meters * Math.cos(angle) / 111_000;
+  const longitude = meters * Math.sin(angle) / (111_000 * Math.max(.2, Math.cos(point.lat * Math.PI / 180)));
+  return { lat: point.lat + latitude, lon: point.lon + longitude };
+}
+
+function appendFailure(slot: string, failure: Failure) {
+  const body = JSON.stringify(failure.context, null, 2).replace(/```/g, '\u0060\u0060\u0060');
+  appendFileSync(failuresFile, `\n## ${slot} — ${failure.category}\n\n${failure.reason}\n\n\`\`\`json\n${body}\n\`\`\`\n`);
+}
+
+function journeySummary(journey: Journey) {
+  return {
+    durationSeconds: journey.durationSeconds,
+    walkingMeters: Math.round(journey.walkingMeters),
+    transfers: journey.transfers,
+    rides: journey.legs.filter(leg => leg.kind === 'ride').map(leg => ({ routeId: leg.routeId, direction: leg.direction, from: leg.from.stopId, to: leg.to.stopId })),
+  };
+}
+
+async function crawl(): Promise<{ network: Network; calls: unknown[]; version: unknown }> {
+  const client = new ApiClient(fetch, '', 20_000);
+  const [rawRoutes, rawVehicles, version, rawTopology] = await Promise.all([
+    client.get(ugaEndpoints.routes, 0),
+    client.get(ugaEndpoints.buses, 0),
+    client.get(ugaEndpoints.version, 0),
+    client.get(ugaEndpoints.data, 0),
+  ]);
+  const routes = normalizeRoutes(rawRoutes, UGA_AGENCY.id, 'uga');
+  const topology = ugaTopology(rawTopology), routeIds = new Set(routes.map(route => route.id));
+  const patterns = topology.patterns.filter(pattern => routeIds.has(pattern.routeId));
+  return {
+    network: {
+      agencyId: UGA_AGENCY.id,
+      routes,
+      patterns,
+      stops: uniqueStops(patterns),
+      vehicles: normalizeVehicles(rawVehicles, 'uga'),
+      departures: [], messages: [], warnings: [], updatedAt: Date.now(),
+    },
+    calls: client.calls.map(call => ({ method: call.method, url: call.url, status: call.status, duration: call.duration })),
+    version,
+  };
+}
+
+function usablePatterns(network: Network): RoutePattern[] {
+  const active = new Set(network.routes.filter(route => route.active).map(route => route.id));
+  return network.patterns.filter(pattern => active.has(pattern.routeId) && pattern.stops.length >= 2);
+}
+
+function directCases(network: Network) {
+  return usablePatterns(network).flatMap(pattern => {
+    const cases: { pattern: RoutePattern; from: Stop; to: Stop; fromIndex: number; toIndex: number }[] = [];
+    for (let fromIndex = 0; fromIndex < pattern.stops.length - 1; fromIndex++) {
+      for (let toIndex = fromIndex + 1; toIndex < pattern.stops.length; toIndex++) {
+        const from = pattern.stops[fromIndex], to = pattern.stops[toIndex];
+        if (from.id !== to.id && distanceMeters(from, to) >= 500) cases.push({ pattern, from, to, fromIndex, toIndex });
+      }
+    }
+    return cases;
+  });
+}
+
+function oneRouteNetwork(network: Network, routeId: string): Network {
+  const patterns = network.patterns.filter(pattern => pattern.routeId === routeId);
+  return {
+    ...network,
+    routes: network.routes.filter(route => route.id === routeId),
+    patterns,
+    stops: uniqueStops(patterns),
+    vehicles: network.vehicles.filter(vehicle => vehicle.routeId === routeId),
+    departures: network.departures.filter(departure => departure.routeId === routeId),
+  };
+}
+
+interface Reachability { possible: boolean; accessStops: number; egressStops: number; visitedStates: number }
+
+/** Independent, timing-free proof that at least one directed bus path exists. */
+function reachable(network: Network, origin: Coordinate, destination: Coordinate): Reachability {
+  const patterns = usablePatterns(network), stops = uniqueStops(patterns), byId = new Map(stops.map(stop => [stop.id, stop]));
+  const serving = new Map<string, { pattern: RoutePattern; at: number }[]>();
+  for (const pattern of patterns) pattern.stops.forEach((stop, at) => serving.set(stop.id, [...(serving.get(stop.id) ?? []), { pattern, at }]));
+  const access = stops.filter(stop => distanceMeters(origin, stop) <= maxWalkMeters);
+  const egress = new Set(stops.filter(stop => distanceMeters(stop, destination) <= maxWalkMeters).map(stop => stop.id));
+  const queue = access.map(stop => ({ stopId: stop.id, mode: 0 })), seen = new Set(queue.map(state => `${state.stopId}:0`));
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const state = queue[cursor];
+    if (state.mode > 0 && egress.has(state.stopId)) return { possible: true, accessStops: access.length, egressStops: egress.size, visitedStates: seen.size };
+    if (state.mode === 2) for (const stop of stops) {
+      if (stop.id === state.stopId || distanceMeters(byId.get(state.stopId)!, stop) > maxTransferWalkMeters) continue;
+      const key = `${stop.id}:1`; if (!seen.has(key)) { seen.add(key); queue.push({ stopId: stop.id, mode: 1 }); }
+    }
+    for (const { pattern, at } of serving.get(state.stopId) ?? []) {
+      const count = pattern.loop ? pattern.stops.length - 1 : pattern.stops.length - at - 1;
+      for (let step = 1; step <= count; step++) {
+        const stop = pattern.stops[(at + step) % pattern.stops.length], key = `${stop.id}:2`;
+        if (!seen.has(key)) { seen.add(key); queue.push({ stopId: stop.id, mode: 2 }); }
+      }
+    }
+  }
+  return { possible: false, accessStops: access.length, egressStops: egress.size, visitedStates: seen.size };
+}
+
+function randomPoint(random: () => number): Coordinate {
+  return {
+    lat: ATHENS_BOUNDS.south + random() * (ATHENS_BOUNDS.north - ATHENS_BOUNDS.south),
+    lon: ATHENS_BOUNDS.west + random() * (ATHENS_BOUNDS.east - ATHENS_BOUNDS.west),
+  };
+}
+
+function randomReachableCase(network: Network, random: () => number) {
+  for (let attempt = 1; attempt <= 120; attempt++) {
+    const origin = randomPoint(random), destination = randomPoint(random), proof = reachable(network, origin, destination);
+    if (proof.possible) return { origin, destination, proof, attempt, selection: 'uniform Athens rectangle' };
+  }
+  const stops = uniqueStops(usablePatterns(network));
+  for (let attempt = 1; attempt <= 120 && stops.length; attempt++) {
+    const first = stops[Math.floor(random() * stops.length)], second = stops[Math.floor(random() * stops.length)];
+    const origin = offset(first, random() * 400, random() * Math.PI * 2), destination = offset(second, random() * 400, random() * Math.PI * 2);
+    const proof = reachable(network, origin, destination);
+    if (proof.possible) return { origin, destination, proof, attempt, selection: 'random stop anchors with random offsets' };
+  }
+  return undefined;
+}
+
+describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
+  it('crawls once and checks a one-route and independently reachable random trip', async () => {
+    const slot = process.env.HOURLY_SLOT || new Date().toISOString().slice(0, 13) + ':00Z';
+    const random = randomGenerator(hash(slot)), failures: Failure[] = [];
+    let snapshot: Awaited<ReturnType<typeof crawl>>;
+    try { snapshot = await crawl(); }
+    catch (error) {
+      const failure = { category: 'API crawl failure', reason: error instanceof Error ? error.message : String(error), context: { slot } };
+      appendFailure(slot, failure); throw error;
+    }
+    const { network, calls, version } = snapshot, candidates = directCases(network);
+    if (!candidates.length) failures.push({
+      category: 'single-route case selection failure',
+      reason: 'The live snapshot had no active directed pattern with two distinct stops at least 500 m apart.',
+      context: { slot, routeCount: network.routes.length, activeRoutes: network.routes.filter(route => route.active).map(route => route.id), patternCount: network.patterns.length, calls, version },
+    });
+    else {
+      const selected = candidates[Math.floor(random() * candidates.length)], angle = random() * Math.PI * 2;
+      const origin = offset(selected.from, 15, angle), destination = offset(selected.to, 15, angle + Math.PI / 2);
+      const isolated = oneRouteNetwork(network, selected.pattern.routeId);
+      const result = planJourney(isolated, origin, destination, { now: isolated.updatedAt, maxWalkMeters: 80, maxTransferWalkMeters });
+      const rides = result.status === 'ok' ? result.journey.legs.filter(leg => leg.kind === 'ride') : [];
+      if (result.status !== 'ok' || !rides.length || rides.some(leg => leg.routeId !== selected.pattern.routeId) || result.journey.transfers !== 0) failures.push({
+        category: 'single-route planning failure',
+        reason: result.status === 'ok' ? 'The planner returned a journey that did not remain on the isolated route.' : result.reason,
+        context: { slot, origin, destination, routeId: selected.pattern.routeId, patternId: selected.pattern.id, direction: selected.pattern.direction, fromStop: selected.from, toStop: selected.to, fromIndex: selected.fromIndex, toIndex: selected.toIndex, result: result.status === 'ok' ? journeySummary(result.journey) : result, isolated: { routes: isolated.routes, patterns: isolated.patterns.map(pattern => ({ id: pattern.id, direction: pattern.direction, stops: pattern.stops.map(stop => stop.id), loop: pattern.loop })) }, calls, version },
+      });
+    }
+
+    const randomCase = randomReachableCase(network, random);
+    if (!randomCase) failures.push({
+      category: 'random-case selection failure',
+      reason: 'No independently reachable random pair was found in 240 bounded attempts.',
+      context: { slot, activeRoutes: network.routes.filter(route => route.active).map(route => route.id), usablePatterns: usablePatterns(network).length, stops: network.stops.length, calls, version },
+    });
+    else {
+      const result = planJourney(network, randomCase.origin, randomCase.destination, { now: network.updatedAt, maxWalkMeters, maxTransferWalkMeters });
+      if (result.status !== 'ok') failures.push({
+        category: 'random reachable-trip planning failure',
+        reason: result.reason,
+        context: { slot, ...randomCase, result, network: { routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).map(route => route.id), patterns: network.patterns.length, stops: network.stops.length, vehicles: network.vehicles.length }, calls, version },
+      });
+    }
+
+    for (const failure of failures) appendFailure(slot, failure);
+    console.log('HOURLY_TRIP_RESULT', JSON.stringify({ slot, apiCalls: calls.length, routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).length, patterns: network.patterns.length, vehicles: network.vehicles.length, failures: failures.length }));
+    if (failures.length) throw new Error(failures.map(failure => `${failure.category}: ${failure.reason}`).join('\n'));
+  }, 120_000);
+});
