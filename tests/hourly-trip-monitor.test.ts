@@ -5,6 +5,7 @@ import { ApiClient, UGA_AGENCY, ugaEndpoints } from '../src/api';
 import { normalizeRoutes, normalizeVehicles, uniqueStops } from '../src/api/normalize';
 import { ugaTopology } from '../src/api/topology';
 import { ATHENS_BOUNDS } from '../src/athens';
+import crosswalk from '../src/data/athens-crosswalk.json';
 import { distanceMeters, planJourney } from '../src/planner';
 import type { Coordinate, Journey, Network, RoutePattern, Stop } from '../src/types';
 
@@ -13,6 +14,21 @@ const failuresFile = fileURLToPath(new URL('../trip_failure.md', import.meta.url
 const maxWalkMeters = 1_200, maxTransferWalkMeters = 300;
 
 interface Failure { category: string; reason: string; context: Record<string, unknown> }
+
+function monitoredPatterns(routeIds: Set<string>, staticPatterns: RoutePattern[]): RoutePattern[] {
+  const stops = new Map(crosswalk.stops.map(stop => [stop.id, { id: stop.id, name: stop.name, lat: stop.lat, lon: stop.lon }]));
+  const current = new Map(staticPatterns.map(pattern => [`${pattern.routeId}\0${pattern.direction}`, pattern]));
+  const reviewed = crosswalk.routes.filter(route => routeIds.has(route.id)).flatMap(route => route.directions.flatMap(direction => {
+    const live = current.get(`${route.id}\0${direction.id}`);
+    if (live) return [live];
+    const ordered = direction.ugaStopIds.flatMap(id => {
+      const stop = stops.get(id); return stop ? [stop] : [];
+    });
+    return ordered.length > 1 ? [{ id: `reviewed:${route.id}:${direction.id}`, routeId: route.id, direction: direction.id, stops: ordered, shape: [] }] : [];
+  }));
+  const keys = new Set(reviewed.map(pattern => `${pattern.routeId}\0${pattern.direction}`));
+  return [...reviewed, ...staticPatterns.filter(pattern => routeIds.has(pattern.routeId) && !keys.has(`${pattern.routeId}\0${pattern.direction}`))];
+}
 
 function hash(value: string): number {
   let result = 2166136261;
@@ -55,7 +71,7 @@ async function crawl(): Promise<{ network: Network; calls: unknown[]; version: u
   ]);
   const routes = normalizeRoutes(rawRoutes, UGA_AGENCY.id, 'uga');
   const topology = ugaTopology(rawTopology), routeIds = new Set(routes.map(route => route.id));
-  const patterns = topology.patterns.filter(pattern => routeIds.has(pattern.routeId));
+  const patterns = monitoredPatterns(routeIds, topology.patterns);
   return {
     network: {
       agencyId: UGA_AGENCY.id,
@@ -198,4 +214,18 @@ describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
     console.log('HOURLY_TRIP_RESULT', JSON.stringify({ slot, apiCalls: calls.length, routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).length, patterns: network.patterns.length, vehicles: network.vehicles.length, failures: failures.length }));
     if (failures.length) throw new Error(failures.map(failure => `${failure.category}: ${failure.reason}`).join('\n'));
   }, 120_000);
+});
+
+describe('hourly monitor topology fallback', () => {
+  it('supplies reviewed directed patterns when the current static feed covers a different operator', () => {
+    const patterns = monitoredPatterns(new Set(['1001', '5750']), []);
+    expect(patterns.filter(pattern => pattern.routeId === '1001')).toHaveLength(2);
+    expect(patterns.find(pattern => pattern.routeId === '1001' && pattern.direction === '1')?.stops.length).toBeGreaterThan(1);
+    expect(patterns.find(pattern => pattern.routeId === '5750')?.stops.length).toBeGreaterThan(1);
+  });
+
+  it('prefers a matching current static pattern over the reviewed fallback', () => {
+    const staticPattern: RoutePattern = { id: 'live', routeId: '5750', direction: '0', stops: [{ id: 'a', name: 'A', lat: 1, lon: 1 }, { id: 'b', name: 'B', lat: 2, lon: 2 }], shape: [], loop: true };
+    expect(monitoredPatterns(new Set(['5750']), [staticPattern])).toEqual([staticPattern]);
+  });
 });
