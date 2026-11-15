@@ -28,7 +28,7 @@ function monitoredPatterns(routeIds: Set<string>, staticPatterns: RoutePattern[]
     if (live && matchesReviewedOrder) return [live];
     return ordered.length > 1 ? [{
       id: `reviewed:${route.id}:${direction.id}`, routeId: route.id, direction: direction.id,
-      stops: ordered, shape: live?.shape ?? [], loop: live?.loop,
+      stops: ordered, shape: [], loop: live?.loop,
     }] : [];
   }));
   const keys = new Set(reviewed.map(pattern => `${pattern.routeId}\0${pattern.direction}`));
@@ -203,7 +203,7 @@ describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
       singleRouteId = selected.pattern.routeId;
       const origin = offset(selected.from, 15, angle), destination = offset(selected.to, 15, angle + Math.PI / 2);
       const isolated = oneRouteNetwork(network, selected.pattern.routeId);
-      const result = planJourney(isolated, origin, destination, { now: isolated.updatedAt, maxWalkMeters: 80, maxTransferWalkMeters });
+      const result = planJourney(isolated, origin, destination, { now: isolated.updatedAt, maxWalkMeters: 80, maxTransferWalkMeters: 0 });
       const rides = result.status === 'ok' ? result.journey.legs.filter(leg => leg.kind === 'ride') : [];
       if (result.status !== 'ok' || !rides.length || rides.some(leg => leg.routeId !== selected.pattern.routeId) || result.journey.transfers !== 0) failures.push({
         category: 'single-route planning failure',
@@ -261,6 +261,22 @@ describe('hourly monitor topology fallback', () => {
     if (result.status === 'ok') {
       expect(result.journey.transfers).toBe(0);
       expect(result.journey.legs.filter(leg => leg.kind === 'ride').map(leg => leg.routeId)).toEqual(['5743']);
+    }
+  });
+
+  it('keeps the reviewed Vet Med route as one ride when transfer walking is disabled', () => {
+    const patterns = monitoredPatterns(new Set(['5740']), []);
+    const data: Network = {
+      agencyId: 'uga', routes: [{ id: '5740', agencyId: 'uga', name: 'Vet Med', shortName: 'V|VM', color: '#123456', active: true }],
+      patterns, stops: uniqueStops(patterns), vehicles: [], departures: [], messages: [], warnings: [], updatedAt: Date.now(),
+    };
+    const result = planJourney(data, { lat: 33.92372618927476, lon: -83.34018934244651 }, { lat: 33.9392773826834, lon: -83.37633153288328 }, {
+      now: data.updatedAt, maxWalkMeters: 80, maxTransferWalkMeters: 0,
+    });
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok') {
+      expect(result.journey.transfers).toBe(0);
+      expect(result.journey.legs.filter(leg => leg.kind === 'ride').map(leg => leg.routeId)).toEqual(['5740']);
     }
   });
 
