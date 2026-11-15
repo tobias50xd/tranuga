@@ -19,12 +19,17 @@ function monitoredPatterns(routeIds: Set<string>, staticPatterns: RoutePattern[]
   const stops = new Map(crosswalk.stops.map(stop => [stop.id, { id: stop.id, name: stop.name, lat: stop.lat, lon: stop.lon }]));
   const current = new Map(staticPatterns.map(pattern => [`${pattern.routeId}\0${pattern.direction}`, pattern]));
   const reviewed = crosswalk.routes.filter(route => routeIds.has(route.id)).flatMap(route => route.directions.flatMap(direction => {
-    const live = current.get(`${route.id}\0${direction.id}`);
-    if (live) return [live];
     const ordered = direction.ugaStopIds.flatMap(id => {
       const stop = stops.get(id); return stop ? [stop] : [];
     });
-    return ordered.length > 1 ? [{ id: `reviewed:${route.id}:${direction.id}`, routeId: route.id, direction: direction.id, stops: ordered, shape: [] }] : [];
+    const live = current.get(`${route.id}\0${direction.id}`);
+    const matchesReviewedOrder = live?.stops.length === direction.ugaStopIds.length
+      && live.stops.every((stop, index) => stop.id === direction.ugaStopIds[index]);
+    if (live && matchesReviewedOrder) return [live];
+    return ordered.length > 1 ? [{
+      id: `reviewed:${route.id}:${direction.id}`, routeId: route.id, direction: direction.id,
+      stops: ordered, shape: live?.shape ?? [], loop: live?.loop,
+    }] : [];
   }));
   const keys = new Set(reviewed.map(pattern => `${pattern.routeId}\0${pattern.direction}`));
   return [...reviewed, ...staticPatterns.filter(pattern => routeIds.has(pattern.routeId) && !keys.has(`${pattern.routeId}\0${pattern.direction}`))];
@@ -230,8 +235,33 @@ describe('hourly monitor topology fallback', () => {
   });
 
   it('prefers a matching current static pattern over the reviewed fallback', () => {
-    const staticPattern: RoutePattern = { id: 'live', routeId: '5750', direction: '0', stops: [{ id: 'a', name: 'A', lat: 1, lon: 1 }, { id: 'b', name: 'B', lat: 2, lon: 2 }], shape: [], loop: true };
+    const reviewed = monitoredPatterns(new Set(['5750']), [])[0];
+    const staticPattern: RoutePattern = { ...reviewed, id: 'live', shape: [{ lat: 1, lon: 1 }, { lat: 2, lon: 2 }], loop: true };
     expect(monitoredPatterns(new Set(['5750']), [staticPattern])).toEqual([staticPattern]);
+  });
+
+  it('rejects an interleaved static sequence and preserves a continuous one-route trip', () => {
+    const reviewed = monitoredPatterns(new Set(['5743']), [])[0];
+    const malformed: RoutePattern = {
+      ...reviewed, id: 'live',
+      stops: reviewed.stops.flatMap((stop, index) => index < reviewed.stops.length / 2 ? [stop, reviewed.stops.at(-index - 1)!] : []),
+    };
+    const patterns = monitoredPatterns(new Set(['5743']), [malformed]);
+    expect(patterns[0].id).toBe('reviewed:5743:0');
+    expect(patterns[0].stops.map(stop => stop.id)).toEqual(reviewed.stops.map(stop => stop.id));
+
+    const data: Network = {
+      agencyId: 'uga', routes: [{ id: '5743', agencyId: 'uga', name: 'Weekender', shortName: 'WN', color: '#123456', active: true }],
+      patterns, stops: uniqueStops(patterns), vehicles: [], departures: [], messages: [], warnings: [], updatedAt: Date.now(),
+    };
+    const result = planJourney(data, offset(patterns[0].stops[3], 15, 0), offset(patterns[0].stops[9], 15, Math.PI), {
+      now: data.updatedAt, maxWalkMeters: 80, maxTransferWalkMeters,
+    });
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok') {
+      expect(result.journey.transfers).toBe(0);
+      expect(result.journey.legs.filter(leg => leg.kind === 'ride').map(leg => leg.routeId)).toEqual(['5743']);
+    }
   });
 
   it('tests an isolated single route outside service hours without claiming random reachability', () => {
