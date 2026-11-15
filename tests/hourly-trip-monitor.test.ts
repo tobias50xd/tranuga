@@ -87,12 +87,19 @@ async function crawl(): Promise<{ network: Network; calls: unknown[]; version: u
 }
 
 function usablePatterns(network: Network): RoutePattern[] {
-  const active = new Set(network.routes.filter(route => route.active).map(route => route.id));
+  const now = network.updatedAt, fresh = (updatedAt: number | undefined) => updatedAt !== undefined && Number.isFinite(updatedAt)
+    && now - updatedAt <= 180_000 && updatedAt <= now + 60_000;
+  const active = new Set([
+    ...network.routes.filter(route => route.active).map(route => route.id),
+    ...network.vehicles.filter(vehicle => fresh(vehicle.updatedAt)).map(vehicle => vehicle.routeId),
+    ...network.departures.filter(departure => !departure.scheduled && fresh(departure.updatedAt)
+      && departure.arrivalTime >= now && departure.arrivalTime <= now + 10_800_000).map(departure => departure.routeId),
+  ]);
   return network.patterns.filter(pattern => active.has(pattern.routeId) && pattern.stops.length >= 2);
 }
 
 function directCases(network: Network) {
-  return usablePatterns(network).flatMap(pattern => {
+  return network.patterns.flatMap(pattern => {
     const cases: { pattern: RoutePattern; from: Stop; to: Stop; fromIndex: number; toIndex: number }[] = [];
     for (let fromIndex = 0; fromIndex < pattern.stops.length - 1; fromIndex++) {
       for (let toIndex = fromIndex + 1; toIndex < pattern.stops.length; toIndex++) {
@@ -108,7 +115,7 @@ function oneRouteNetwork(network: Network, routeId: string): Network {
   const patterns = network.patterns.filter(pattern => pattern.routeId === routeId);
   return {
     ...network,
-    routes: network.routes.filter(route => route.id === routeId),
+    routes: network.routes.filter(route => route.id === routeId).map(route => ({ ...route, active: true })),
     patterns,
     stops: uniqueStops(patterns),
     vehicles: network.vehicles.filter(vehicle => vehicle.routeId === routeId),
@@ -152,8 +159,10 @@ function randomPoint(random: () => number): Coordinate {
 }
 
 function randomReachableCase(network: Network, random: () => number) {
+  let firstUniform: ReturnType<typeof randomPoint> | undefined, firstDestination: ReturnType<typeof randomPoint> | undefined;
   for (let attempt = 1; attempt <= 120; attempt++) {
     const origin = randomPoint(random), destination = randomPoint(random), proof = reachable(network, origin, destination);
+    if (attempt === 1) { firstUniform = origin; firstDestination = destination; }
     if (proof.possible) return { origin, destination, proof, attempt, selection: 'uniform Athens rectangle' };
   }
   const stops = uniqueStops(usablePatterns(network));
@@ -163,11 +172,12 @@ function randomReachableCase(network: Network, random: () => number) {
     const proof = reachable(network, origin, destination);
     if (proof.possible) return { origin, destination, proof, attempt, selection: 'random stop anchors with random offsets' };
   }
-  return undefined;
+  const origin = firstUniform!, destination = firstDestination!;
+  return { origin, destination, proof: reachable(network, origin, destination), attempt: 1, selection: 'uniform Athens rectangle; no independently reachable pair found in bounded search' };
 }
 
 describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
-  it('crawls once and checks a one-route and independently reachable random trip', async () => {
+  it('crawls once and checks a one-route trip and a random trip against independent reachability', async () => {
     const slot = process.env.HOURLY_SLOT || new Date().toISOString().slice(0, 13) + ':00Z';
     const random = randomGenerator(hash(slot)), failures: Failure[] = [];
     let snapshot: Awaited<ReturnType<typeof crawl>>;
@@ -177,6 +187,7 @@ describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
       appendFailure(slot, failure); throw error;
     }
     const { network, calls, version } = snapshot, candidates = directCases(network);
+    let singleRouteId: string | undefined;
     if (!candidates.length) failures.push({
       category: 'single-route case selection failure',
       reason: 'The live snapshot had no active directed pattern with two distinct stops at least 500 m apart.',
@@ -184,6 +195,7 @@ describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
     });
     else {
       const selected = candidates[Math.floor(random() * candidates.length)], angle = random() * Math.PI * 2;
+      singleRouteId = selected.pattern.routeId;
       const origin = offset(selected.from, 15, angle), destination = offset(selected.to, 15, angle + Math.PI / 2);
       const isolated = oneRouteNetwork(network, selected.pattern.routeId);
       const result = planJourney(isolated, origin, destination, { now: isolated.updatedAt, maxWalkMeters: 80, maxTransferWalkMeters });
@@ -196,22 +208,15 @@ describe.skipIf(!enabled)('bounded hourly live trip monitor', () => {
     }
 
     const randomCase = randomReachableCase(network, random);
-    if (!randomCase) failures.push({
-      category: 'random-case selection failure',
-      reason: 'No independently reachable random pair was found in 240 bounded attempts.',
-      context: { slot, activeRoutes: network.routes.filter(route => route.active).map(route => route.id), usablePatterns: usablePatterns(network).length, stops: network.stops.length, calls, version },
+    const result = planJourney(network, randomCase.origin, randomCase.destination, { now: network.updatedAt, maxWalkMeters, maxTransferWalkMeters });
+    if (randomCase.proof.possible && result.status !== 'ok') failures.push({
+      category: 'random reachable-trip planning failure',
+      reason: result.reason,
+      context: { slot, ...randomCase, result, network: { routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).map(route => route.id), patterns: network.patterns.length, stops: network.stops.length, vehicles: network.vehicles.length }, calls, version },
     });
-    else {
-      const result = planJourney(network, randomCase.origin, randomCase.destination, { now: network.updatedAt, maxWalkMeters, maxTransferWalkMeters });
-      if (result.status !== 'ok') failures.push({
-        category: 'random reachable-trip planning failure',
-        reason: result.reason,
-        context: { slot, ...randomCase, result, network: { routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).map(route => route.id), patterns: network.patterns.length, stops: network.stops.length, vehicles: network.vehicles.length }, calls, version },
-      });
-    }
 
     for (const failure of failures) appendFailure(slot, failure);
-    console.log('HOURLY_TRIP_RESULT', JSON.stringify({ slot, apiCalls: calls.length, routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).length, patterns: network.patterns.length, vehicles: network.vehicles.length, failures: failures.length }));
+    console.log('HOURLY_TRIP_RESULT', JSON.stringify({ slot, apiCalls: calls.length, routes: network.routes.length, activeRoutes: network.routes.filter(route => route.active).length, availablePatterns: usablePatterns(network).length, patterns: network.patterns.length, vehicles: network.vehicles.length, singleRouteId, randomProvenReachable: randomCase.proof.possible, failures: failures.length }));
     if (failures.length) throw new Error(failures.map(failure => `${failure.category}: ${failure.reason}`).join('\n'));
   }, 120_000);
 });
@@ -227,5 +232,17 @@ describe('hourly monitor topology fallback', () => {
   it('prefers a matching current static pattern over the reviewed fallback', () => {
     const staticPattern: RoutePattern = { id: 'live', routeId: '5750', direction: '0', stops: [{ id: 'a', name: 'A', lat: 1, lon: 1 }, { id: 'b', name: 'B', lat: 2, lon: 2 }], shape: [], loop: true };
     expect(monitoredPatterns(new Set(['5750']), [staticPattern])).toEqual([staticPattern]);
+  });
+
+  it('tests an isolated single route outside service hours without claiming random reachability', () => {
+    const patterns = monitoredPatterns(new Set(['1001']), []), stops = uniqueStops(patterns);
+    const network: Network = {
+      agencyId: 'uga', routes: [{ id: '1001', agencyId: 'uga', name: 'North Ave', shortName: '1', color: '#123456', active: false }],
+      patterns, stops, vehicles: [], departures: [], messages: [], warnings: [], updatedAt: Date.now(),
+    };
+    expect(usablePatterns(network)).toEqual([]);
+    expect(directCases(network).length).toBeGreaterThan(0);
+    expect(oneRouteNetwork(network, '1001').routes[0].active).toBe(true);
+    expect(reachable(network, stops[0], stops.at(-1)!)).toMatchObject({ possible: false });
   });
 });

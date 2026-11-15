@@ -101,3 +101,87 @@ No independently reachable random pair was found in 240 bounded attempts.
   }
 }
 ```
+
+## 2026-11-15T01:00:00.000Z — single-route case selection failure
+
+The live snapshot had no active directed pattern with two distinct stops at least 500 m apart.
+
+```json
+{
+  "slot": "2026-11-15T01:00:00.000Z",
+  "routeCount": 35,
+  "activeRoutes": [],
+  "patternCount": 53,
+  "calls": [
+    {
+      "method": "GET",
+      "url": "https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/busData.json",
+      "status": "ok",
+      "duration": 487
+    },
+    {
+      "method": "GET",
+      "url": "https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/version.json",
+      "status": "ok",
+      "duration": 264
+    },
+    {
+      "method": "GET",
+      "url": "https://my.uga.edu/v4_19/cache/Buses",
+      "status": "ok",
+      "duration": 256
+    },
+    {
+      "method": "GET",
+      "url": "https://my.uga.edu/v4_19/cache/Routes",
+      "status": "ok",
+      "duration": 305
+    }
+  ],
+  "version": {
+    "version": 1086
+  }
+}
+```
+
+## 2026-11-15T01:00:00.000Z — random-case selection failure
+
+No independently reachable random pair was found in 240 bounded attempts.
+
+```json
+{
+  "slot": "2026-11-15T01:00:00.000Z",
+  "activeRoutes": [],
+  "usablePatterns": 0,
+  "stops": 607,
+  "calls": [
+    {
+      "method": "GET",
+      "url": "https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/busData.json",
+      "status": "ok",
+      "duration": 487
+    },
+    {
+      "method": "GET",
+      "url": "https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/version.json",
+      "status": "ok",
+      "duration": 264
+    },
+    {
+      "method": "GET",
+      "url": "https://my.uga.edu/v4_19/cache/Buses",
+      "status": "ok",
+      "duration": 256
+    },
+    {
+      "method": "GET",
+      "url": "https://my.uga.edu/v4_19/cache/Routes",
+      "status": "ok",
+      "duration": 305
+    }
+  ],
+  "version": {
+    "version": 1086
+  }
+}
+```
