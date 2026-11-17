@@ -72,9 +72,9 @@ export class MergeSession {
     const conflict = fresh.some((a, i) => fresh.slice(i + 1).some(b => !compatible(a.value, b.value)));
     return { values, fresh, clique, conflict };
   }
-  private choose<T extends Provenance>(input: Observation<T>[], compatible: (a: T, b: T) => boolean, observed?: (value: T) => number | undefined, voteable: (value: T) => boolean = () => true): T {
+  private choose<T extends Provenance>(input: Observation<T>[], compatible: (a: T, b: T) => boolean, observed?: (value: T) => number | undefined, voteable: (value: T) => boolean = () => true, preferLive = false): T {
     const { values, clique, conflict } = this.ballot(input, compatible, observed, voteable);
-    const selected = this.preferred(clique.length >= 2 ? clique : values, observed)[0];
+    const selected = this.preferred(clique.length >= (preferLive ? 1 : 2) ? clique : values, observed)[0];
     const selectedCached = selected.cached || cachedValue(selected.value);
     const corroborated = clique.length >= 2;
     if (corroborated) this.counts.agreements++;
@@ -127,7 +127,7 @@ export class MergeSession {
       const hasActive = grouped.some(item => !item.cached && !cachedValue(item.value) && item.value.active === true);
       const items = hasActive ? grouped.filter(item => item.value.active !== false) : grouped;
       const compatible = (a: Vehicle, b: Vehicle) => a.routeId === b.routeId && distanceMeters(a, b) <= 100 && (a.updatedAt === undefined || b.updatedAt === undefined || Math.abs(a.updatedAt - b.updatedAt) <= 60000);
-      const voteable = (value: Vehicle) => value.active !== false && (value.active === true || value.updatedAt !== undefined && this.now - value.updatedAt <= LIVE_BACKUP_MS && value.updatedAt <= this.now + 60000);
+      const voteable = (value: Vehicle) => value.active !== false && (value.updatedAt === undefined ? value.active === true : this.now - value.updatedAt <= LIVE_BACKUP_MS && value.updatedAt <= this.now + 60000);
       const ballot = this.ballot(items, compatible, value => value.updatedAt, voteable);
       if (this.vehicleQuorum > 1 && ballot.clique.length < this.vehicleQuorum) {
         if (ballot.conflict) this.counts.conflicts++;
@@ -135,7 +135,7 @@ export class MergeSession {
         else this.counts.singleSource++;
         continue;
       }
-      result.push(this.choose(items, compatible, value => value.updatedAt, voteable));
+      result.push(this.choose(items, compatible, value => value.updatedAt, voteable, true));
     }
     return result;
   }
@@ -191,15 +191,17 @@ export class MergeSession {
     return result.sort((a, b) => a.arrivalTime - b.arrivalTime);
   }
   messages(input: Observation<string[]>[]): string[] { return [...new Set(input.flatMap(observation => observation.value))]; }
-  network(input: Observation<Network>[]): Network {
-    let routes = this.routes(input.map(value => mapValue(value, value.value.routes)));
-    const vehicles = this.vehicles(input.map(value => mapValue(value, value.value.vehicles)));
-    const departures = this.departures(input.map(value => mapValue(value, value.value.departures)));
-    routes = routes.map(route => {
+  currentRoutes(routes: Route[], vehicles: Vehicle[], departures: Departure[] = []): Route[] {
+    return routes.map(route => {
       if (route.availability !== 'published' && route.availability !== 'unknown') return route;
-      const running = route.active && (vehicles.some(bus => bus.routeId === route.id && bus.updatedAt !== undefined && this.now - bus.updatedAt <= LIVE_BACKUP_MS && bus.updatedAt <= this.now + 60000) || departures.some(departure => departure.routeId === route.id && !departure.scheduled && departure.arrivalTime >= this.now && departure.arrivalTime <= this.now + 10800000 && departure.updatedAt !== undefined && this.now - departure.updatedAt <= 180000 && departure.updatedAt <= this.now + 60000));
+      const running = route.active && (vehicles.some(bus => bus.routeId === route.id && bus.active !== false && bus.updatedAt !== undefined && this.now - bus.updatedAt <= LIVE_BACKUP_MS && bus.updatedAt <= this.now + 60000) || departures.some(departure => departure.routeId === route.id && !departure.scheduled && departure.arrivalTime >= this.now && departure.arrivalTime <= this.now + 10800000 && departure.updatedAt !== undefined && this.now - departure.updatedAt <= 180000 && departure.updatedAt <= this.now + 60000));
       return { ...route, active: running, availability: running ? 'current' : 'unknown' };
     });
+  }
+  network(input: Observation<Network>[]): Network {
+    const vehicles = this.vehicles(input.map(value => mapValue(value, value.value.vehicles)));
+    const departures = this.departures(input.map(value => mapValue(value, value.value.departures)));
+    const routes = this.currentRoutes(this.routes(input.map(value => mapValue(value, value.value.routes))), vehicles, departures);
     const allPatterns = this.patterns(input.map(value => mapValue(value, value.value.patterns)));
     const patterns = allPatterns.filter(pattern => pattern.agreement !== 'conflict');
     const stops = this.stops(input.map(value => mapValue(value, [...value.value.stops, ...value.value.patterns.flatMap(pattern => pattern.stops)])));

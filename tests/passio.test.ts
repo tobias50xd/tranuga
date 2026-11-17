@@ -101,6 +101,10 @@ describe('Passio endpoints and real contracts', () => {
       expect.objectContaining({ id:'19156', lat:39.1, lon:-82.1, active:false }),
     ]);
   });
+  it('does not treat a missing outdated flag as provider confirmation of a clock-only position', () => {
+    const row = {...ohio.buses.buses['449441'][0],outdated:undefined};
+    expect(normalizePassioVehicles({buses:{unknown:[row]}},'5842')[0].active).toBeUndefined();
+  });
   it('converts ETA epoch seconds, keeps run identity and maps UGA group/direction explicitly', () => {
     const raw = normalizePassioDepartures(ohio.eta), group = normalizePassioDepartures(uga.eta, '3994');
     expect(raw[0]).toMatchObject({ stopId:'190923', routeId:'66949', direction:'66949', vehicleId:'19156', tripId:'989397', arrivalTime:1794534304000 });

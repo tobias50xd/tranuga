@@ -4,7 +4,7 @@ import ohioFixture from '../fixtures/passio-ohio.json' with { type: 'json' };
 import ugaPassioFixture from '../fixtures/passio-uga.json' with { type: 'json' };
 import passioExtras from '../fixtures/passio-extras.json' with { type: 'json' };
 
-type MockOptions = { cityRoute?: boolean; transfer?: boolean; outsideVehicle?: boolean; failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[] };
+type MockOptions = { cityRoute?: boolean; transfer?: boolean; outsideVehicle?: boolean; failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[]; freshPassioVehicles?: boolean; duplicatePassioVehicles?: boolean };
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => { const errors: string[] = []; pageErrors.set(page, errors); page.on('pageerror', error => errors.push(error.message)); });
 test.afterEach(({ page }) => { expect(pageErrors.get(page)).toEqual([]); });
@@ -29,6 +29,11 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
       const body = route.request().postDataJSON() || {};
       const system = body.systemSelected0 || body.s0 || body.systems?.systemSelected0 || target.searchParams.get('userId') || '5842';
       const passio = structuredClone(system === '3994' ? ugaPassioFixture : ohioFixture);
+      if (options.freshPassioVehicles) for (const buses of Object.values(passio.buses.buses)) for (const bus of buses) Object.assign(bus,{updatedUtc:new Date().toISOString()});
+      if (options.duplicatePassioVehicles) {
+        const current=Object.values(passio.buses.buses).flat().find(bus=>String(bus.routeId)==='44886');
+        if (current) Object.assign(passio.buses.buses,{old:[{...current,outdated:1,latitude:'33.94',longitude:'-83.38'}]});
+      }
       for (const rows of Object.values(passio.eta.ETAs)) for (const row of rows) {
         Object.assign(row, {arrivalTimestamp:Date.now()+300000,etaUtc:Date.now()+300000,updatedUtc:new Date().toISOString().slice(0,19).replace('T',' ')});
       }
@@ -132,6 +137,59 @@ test('positions update through the polling feature', async ({ page }) => {
   const before = calls.filter(url => url.endsWith('/Buses')).length;
   await page.clock.fastForward(16000);
   await expect.poll(() => calls.filter(url => url.endsWith('/Buses')).length).toBeGreaterThan(before);
+});
+
+test('opening a route immediately refreshes cached bus data before displaying its map',async({page})=>{
+  const {calls,data}=await mockTransit(page);
+  await page.clock.install(); await page.clock.pauseAt(new Date());
+  await page.goto('/');await expect(page.locator('.route-card')).toHaveCount(2);
+  const before=calls.filter(url=>url.endsWith('/Buses')).length;
+  expect(before).toBe(1);
+  data.ugaVehicles[0].heading=200;
+  await page.locator('[data-route="5750"]').click();
+  await expect(page.locator('.bus-marker')).toHaveCount(1);
+  await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label',/Bus 17997, S/);
+  await expect(page.locator('.bus-pointer.stale')).toHaveCount(0);
+  expect(calls.filter(url=>url.endsWith('/Buses')).length).toBeGreaterThan(before);
+});
+
+test('opening the planner immediately requests buses from every configured source',async({page})=>{
+  const {calls}=await mockTransit(page,{passio:true});
+  await page.clock.install();await page.clock.pauseAt(new Date());
+  await page.goto('/plan');
+  await expect(page.locator('#trip-map.leaflet-container')).toBeVisible();
+  await expect.poll(()=>calls.filter(url=>new URL(url).searchParams.get('getBuses')==='1').length).toBe(3);
+  expect(calls.some(url=>url.endsWith('/Buses'))).toBe(true);
+  expect(calls.some(url=>url.includes('bustracker.accgov.com'))).toBe(true);
+  await expect(page.locator('.trip-summary')).toHaveCount(0);
+});
+
+test('initial catalog includes live evidence and keeps updating after a background crawl',async({page})=>{
+  const {data}=await mockTransit(page,{passio:true,failRoutes:true,freshPassioVehicles:true});
+  await page.clock.install();await page.goto('/');
+  const card=page.locator('.route-card').filter({has:page.locator('[data-route="5750"]')});
+  await expect(card).toHaveClass(/route-active/);
+  // A later crawl must update cards, not only the source-health bar.
+  await page.route('**/api?url=*',route=>{
+    const target=new URL(new URL(route.request().url()).searchParams.get('url')!);
+    if (target.searchParams.get('getBuses')==='1') return route.fulfill({json:{buses:{}}});
+    return route.fallback();
+  });
+  data.ugaVehicles.length=0;
+  await page.clock.fastForward(61000);
+  await expect(card).toHaveClass(/route-unconfirmed/);
+});
+
+test('a provider-current clock-only bus replaces its grey duplicate on the initial map',async({page})=>{
+  await mockTransit(page,{passio:true,noVehicles:true,duplicatePassioVehicles:true});
+  await page.goto('/routes/5750');
+  const bus=page.locator('.bus-marker[aria-label^="Bus 15228,"]');
+  await expect(bus).toHaveCount(1);
+  await expect(page.locator('.bus-marker')).toHaveCount(1);
+  await expect(bus.locator('.bus-pointer.stale')).toHaveCount(0);
+  await expect(page.locator('.vehicle-card')).toHaveCount(1);
+  await expect(page.locator('.vehicle-card')).toContainText('Update time unavailable');
+  await expect(page.locator('.vehicle-card .stale-label')).toHaveCount(0);
 });
 
 test('stale and empty vehicle data are disclosed', async ({ page }) => {

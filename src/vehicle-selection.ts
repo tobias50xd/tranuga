@@ -1,5 +1,12 @@
 import type { Vehicle } from './types';
 
+/** Provider-current clock-only reports can be colored without inventing a GPS timestamp. */
+export function vehicleIsStale(vehicle: Vehicle, now = Date.now()): boolean {
+  if (vehicle.active === false || vehicle.agreement === 'stale-backup' || vehicle.sources?.length && vehicle.sources.every(source => source.cached)) return true;
+  if (vehicle.updatedAt === undefined) return vehicle.active !== true;
+  return !Number.isFinite(vehicle.updatedAt) || now - vehicle.updatedAt > 120000 || vehicle.updatedAt > now + 60000;
+}
+
 const agreementRank = (vehicle: Vehicle) => vehicle.agreement === 'corroborated' ? 2 : vehicle.agreement === 'single-source' ? 1 : 0;
 
 /** Prefer a provider-current marker for one canonical bus. */

@@ -19,12 +19,16 @@ export class VehicleMotion {
   finish() { this.from=this.to; this.duration=0; }
   update(bus: Vehicle, now: number, reducedMotion = false) {
     const prior=this.latest;
-    if (bus.updatedAt !== undefined && prior.updatedAt !== undefined && bus.updatedAt < prior.updatedAt) return;
+    if (bus.updatedAt !== undefined && prior.updatedAt !== undefined && bus.updatedAt < prior.updatedAt && !(prior.active === false && bus.active === true)) return;
     // Identical cached fixes do not restart a tween.
-    if (bus.lat===prior.lat && bus.lon===prior.lon && bus.updatedAt===prior.updatedAt && bus.heading===prior.heading) return;
+    if (bus.lat===prior.lat && bus.lon===prior.lon && bus.updatedAt===prior.updatedAt && bus.heading===prior.heading) {
+      this.latest=bus;
+      if (bus.routeId!==prior.routeId || bus.active===false || bus.agreement==='stale-backup' || bus.sources?.some(source=>source.cached)) this.finish();
+      return;
+    }
     const current=this.sample(now), gap=(bus.updatedAt??0)-(prior.updatedAt??0), distance=distanceMeters(prior,bus);
     const fresh=(value: Vehicle) => value.updatedAt !== undefined && Number.isFinite(value.updatedAt) && now-value.updatedAt>=-1000 && now-value.updatedAt<=120000;
-    const animate=!reducedMotion && !bus.sources?.some(source=>source.cached) && !prior.sources?.some(source=>source.cached) && bus.agreement!=='stale-backup' && prior.agreement!=='stale-backup' && bus.id===prior.id && bus.routeId===prior.routeId && gap>0 && gap<=60000 && fresh(bus) && fresh(prior) && distance<=120 && distance/(gap/1000)<=25;
+    const animate=!reducedMotion && bus.active!==false && prior.active!==false && !bus.sources?.some(source=>source.cached) && !prior.sources?.some(source=>source.cached) && bus.agreement!=='stale-backup' && prior.agreement!=='stale-backup' && bus.id===prior.id && bus.routeId===prior.routeId && gap>0 && gap<=60000 && fresh(bus) && fresh(prior) && distance<=120 && distance/(gap/1000)<=25;
     this.latest=bus; this.to=point(bus); this.start=now;
     if (!animate) { this.from=this.to; this.duration=0; return; }
     const remaining=distanceMeters(current,this.to);

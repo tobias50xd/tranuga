@@ -28,6 +28,7 @@ describe('bounded display interpolation',()=>{
  });
  it.each([
   ['unknown time',bus({updatedAt:undefined})],
+  ['outdated flag',bus({active:false,lon:-83.3769,updatedAt:now+15000})],
   ['stale time',bus({updatedAt:now-180000})],
   ['future time',bus({updatedAt:now+180000})],
   ['large jump',bus({lon:-83.35,updatedAt:now+15000})],
@@ -37,6 +38,31 @@ describe('bounded display interpolation',()=>{
  ] as const)('snaps instead of inventing movement for %s',(_label,next)=>{
   const motion=new VehicleMotion(bus({updatedAt:_label==='stale time'?now-200000:now}));motion.update(next,now+15000);
   expect(motion.moving(now+15000)).toBe(false);expect(motion.sample(now+15000)).toMatchObject({lat:next.lat,lon:next.lon});
+ });
+ it('updates activity and route metadata for identical fixes without restarting interpolation',()=>{
+  const motion=new VehicleMotion(bus({active:false}));
+  const current=bus({active:true,destination:'New destination'});
+  motion.update(current,now+1000);
+  expect(motion.latest).toEqual(current);
+  const moved=bus({active:true,lon:-83.3769,updatedAt:now+15000});
+  motion.update(moved,now+15000);
+  motion.update({...moved,agreement:'corroborated'},now+15600);
+  expect(motion.latest.agreement).toBe('corroborated');
+  expect(motion.moving(now+16200)).toBe(false);
+  motion.update({...moved,routeId:'2'},now+16300);
+  expect(motion.latest.routeId).toBe('2');
+ });
+ it('accepts a current replacement for an explicitly outdated point even when its measurement is older',()=>{
+  const motion=new VehicleMotion(bus({active:false}));
+  const current=bus({active:true,lon:-83.3769,updatedAt:now-1000});
+  motion.update(current,now);
+  expect(motion.latest).toEqual(current);expect(motion.moving(now)).toBe(false);
+ });
+ it('stops an ongoing tween when an unchanged fix is marked outdated',()=>{
+  const motion=new VehicleMotion(bus()),next=bus({lon:-83.3769,updatedAt:now+15000});
+  motion.update(next,now+15000);expect(motion.moving(now+15500)).toBe(true);
+  motion.update({...next,active:false},now+15500);
+  expect(motion.latest.active).toBe(false);expect(motion.moving(now+15500)).toBe(false);
  });
  it('respects reduced motion and can finish immediately when a map is hidden',()=>{
   const motion=new VehicleMotion(bus()),next=bus({lon:-83.3769,updatedAt:now+15000});motion.update(next,now+15000,true);

@@ -6,7 +6,7 @@ import { escapeHtml as e, safeColor, vehicleAge, headingLabel } from './ui';
 import { ATHENS_BOUNDS, inAthens } from './athens';
 import { rideGeometry, journeyTransfers } from './journey-map';
 import { VehicleMotion } from './vehicle-motion';
-import { uniqueVehicles } from './vehicle-selection';
+import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
 interface BusMarker { marker: L.Marker; motion: VehicleMotion }
 
 export class TransitMap {
@@ -83,7 +83,7 @@ export class TransitMap {
         state={marker:L.marker([bus.lat,bus.lon],{icon:L.divIcon({className:'bus-marker',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(this.vehicles),motion:new VehicleMotion(bus)};
         this.busMarkers.set(key,state);
       } else state.motion.update(bus,now,this.reducedMotion.matches || document.hidden);
-      const latest=state.motion.latest, stale=!latest.updatedAt || now-latest.updatedAt>120000;
+      const latest=state.motion.latest, stale=vehicleIsStale(latest,now);
       state.marker.setIcon(L.divIcon({className:'bus-marker',html:`<span class="bus-pointer ${stale?'stale':''}" style="--bus-color:${safeColor(color(latest))};--heading:${Number.isFinite(latest.heading)?latest.heading:0}deg"><span>↑</span></span>`,iconSize:[34,34],iconAnchor:[17,17]}));
       state.marker.getElement()?.setAttribute('aria-label',`Bus ${latest.id}, ${headingLabel(latest.heading)}`);
       const routeName=name(latest);
@@ -121,7 +121,7 @@ export class TransitMap {
   showJourneyVehicles(journey: Journey, network: Network) {
     const ids=new Set(journey.legs.filter(leg=>leg.kind==='ride').map(leg=>leg.routeId));
     const routes=new Map(network.routes.map(route=>[route.id,route]));
-    this.syncVehicles(network.vehicles.filter(bus=>ids.has(bus.routeId)),bus=>routes.get(bus.routeId)?.color||'#b92535',bus=>routes.get(bus.routeId)?.name);
+    this.syncVehicles(uniqueVehicles(network.vehicles).filter(bus=>ids.has(bus.routeId)),bus=>routes.get(bus.routeId)?.color||'#b92535',bus=>routes.get(bus.routeId)?.name);
   }
 
   showPoints(origin?: Coordinate, destination?: Coordinate) {

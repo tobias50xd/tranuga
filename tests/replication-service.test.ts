@@ -106,6 +106,20 @@ describe('replicated crawling and public last-good snapshots',()=>{
     const providers=[provider(),provider(),provider()];await replicated(providers).crawlLive();
     providers.forEach(source=>{expect(source.listRoutes).toHaveBeenCalled();expect(source.refreshVehicles).toHaveBeenCalled();expect(source.getMessages).toHaveBeenCalled();expect(source.getNetwork).not.toHaveBeenCalled();});
   });
+  it('uses initial vehicle evidence for publication-only cards without loading topology or arrivals',async()=>{
+    const source=provider(); source.listRoutes=vi.fn(async()=>[{...route,availability:'published'}]);
+    const service=replicated([source]);
+    expect(await service.getLiveRoutes()).toEqual([expect.objectContaining({active:true,availability:'current'})]);
+    source.refreshVehicles=fail;
+    const offline=replicated([source]);
+    expect(await offline.getLiveRoutes()).toEqual([expect.objectContaining({active:false,availability:'unknown'})]);
+    expect(source.getNetwork).not.toHaveBeenCalled();
+  });
+  it('requests fresh vehicle data through nested coordinators when a map opens',async()=>{
+    const source=provider(), child=replicated([source]);
+    await replicated([child]).refreshVehicles(true);
+    expect(source.refreshVehicles).toHaveBeenCalledWith(true);
+  });
   it('expires snapshots beyond one day rather than claiming indefinite offline availability',()=>{
     const storage=memory();new SnapshotStore(storage,()=>now).put('key',[route]);
     const old=new SnapshotStore(storage,()=>now+86400001);expect(old.get('key',(v):v is Route[]=>Array.isArray(v))).toBeUndefined();

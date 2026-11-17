@@ -86,8 +86,8 @@ export function normalizePassioVehicles(value: unknown, agencyId: string): Vehic
       if (!point || !id || !routeId || text(row.userId) !== agencyId || text(row.outOfService) === '1') return [];
       const heading = num(row.calculatedCourse) ?? num(row.course);
       // The observed response has only a local 12h time without date/offset. Request time is not GPS time.
-      const updatedAt = utcTimestamp(row.updatedUtc) ?? timestamp(row.updatedAt) ?? timestamp(row.timestamp);
-      return [{ id, routeId, ...point, heading: heading === undefined ? 0 : ((heading % 360) + 360) % 360, updatedAt, active: text(row.outdated, '0') !== '1', destination: text(row.route, `Route ${routeId}`), tripId: text(row.tripId) || undefined }];
+      const updatedAt = utcTimestamp(row.updatedUtc) ?? timestamp(row.updatedAt) ?? timestamp(row.timestamp), outdated = text(row.outdated);
+      return [{ id, routeId, ...point, heading: heading === undefined ? 0 : ((heading % 360) + 360) % 360, updatedAt, active: outdated === '0' ? true : outdated === '1' ? false : undefined, destination: text(row.route, `Route ${routeId}`), tripId: text(row.tripId) || undefined }];
     });
   });
   // A feed can retain an outdated point beside the current point for one bus.
@@ -236,9 +236,9 @@ export class PassioService {
     return this.topology;
   }
   async getStops(): Promise<Stop[]> { return (await this.loadTopology()).stops; }
-  async refreshVehicles(): Promise<Vehicle[]> {
+  async refreshVehicles(fresh = false): Promise<Vehicle[]> {
     if (this.agency.id === '3994' && !this.variantRoutes.size) await this.listRoutes();
-    return normalizePassioVehicles(await this.client.post(this.endpoints.buses, this.endpoints.systemPayload, 10000), this.agency.id).map(vehicle => ({ ...vehicle, routeId: this.variantRoutes.get(vehicle.routeId) ?? vehicle.routeId }));
+    return normalizePassioVehicles(await this.client.post(this.endpoints.buses, this.endpoints.systemPayload, 10000, fresh), this.agency.id).map(vehicle => ({ ...vehicle, routeId: this.variantRoutes.get(vehicle.routeId) ?? vehicle.routeId }));
   }
   async getMessages(): Promise<string[]> {
     return normalizePassioMessages(await this.client.post(this.endpoints.messages, this.endpoints.messagePayload, 60000), this.agency.id);

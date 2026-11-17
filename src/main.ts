@@ -6,6 +6,7 @@ import { TransitMap } from './map';
 import { renderNotes, compactNote } from './notes';
 import { Favorites } from './favorites';
 import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-presentation';
+import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
 import { PlaceInput, PlaceSearch } from './places';
 import { inAthens, isAthensAgency, vehiclesInScope, networkInScope } from './athens';
 import { readPreferences, savePreference, THEME_KEY, ATHENS_LOCK_KEY } from './preferences';
@@ -33,7 +34,7 @@ const favorites = new Favorites();
 let displayedJourney: Journey | undefined;
 let pickMode: 'origin' | 'destination' | undefined;
 let operation = 0;
-let pollBusy = false;
+let pollingOperation: number | undefined;
 let catalogTime: number | undefined;
 let network: Network | undefined;
 let agencyChoices: Agency[] = [];
@@ -139,7 +140,10 @@ $('#provider-info').onclick = async () => {
 };
 async function crawlLive() {
   if (crawling || document.hidden) return; const current = service; crawling = true;
-  try { await current.crawlLive(); } finally { crawling = false; if (service === current) renderReplication(); }
+  try {
+    const result = await current.crawlLive();
+    if (service === current && result) { routes = result; catalogTime = Date.now(); if (view === 'routes') renderRouteCards(); }
+  } finally { crawling = false; if (service === current) renderReplication(); }
 }
 
 document.querySelectorAll<HTMLButtonElement>('[data-nav]').forEach(button => button.onclick = () => {
@@ -167,7 +171,7 @@ async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
   if (!routes.length || refresh) {
     try {
       if (refresh) service.client.clear();
-      const result = await service.listRoutes();
+      const result = await service.getLiveRoutes();
       if (token !== operation) return;
       routes = result; catalogTime = Date.now(); network = undefined;
     } catch (error) {
@@ -175,7 +179,10 @@ async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
       $('#catalog-status').innerHTML = `${warning([errorMessage(error)], 'error')}`;
     }
   }
-  if (token === operation) { renderRouteCards(); renderReplication(); if (!crawled.has(service)) { crawled.add(service); void crawlLive(); } }
+  if (token === operation) {
+    renderRouteCards(); renderReplication();
+    if (!crawled.has(service)) { const current = service; crawled.add(current); void current.getMessages().catch(() => []).finally(() => { if (service === current) renderReplication(); }); }
+  }
 }
 
 function renderRouteCards() {
@@ -203,13 +210,16 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
   main.innerHTML = `<section class="container detail-page"><button class="text-button" id="back-routes">← All routes</button><div id="route-detail" class="loading" role="status">Loading route, stops and live buses…</div></section>`;
   $('#back-routes').onclick = () => void showRoutes();
   try {
-    const raw = await service.getRoute(routeId);
-    const result = { ...raw, vehicles: vehiclesInScope(raw.vehicles, athensLocked) };
+    // Start a live request with map loading, even if the catalog warmed the short client cache.
+    // Reconcile the entire fleet before filtering so old route assignments cannot leave ghost buses.
+    const live = service.refreshVehicles(true).catch(() => undefined);
+    const [raw, vehicles] = await Promise.all([service.getRoute(routeId), live]);
+    const result = { ...raw, vehicles: vehiclesInScope(uniqueVehicles(vehicles ?? raw.vehicles).filter(bus => bus.routeId === routeId), athensLocked) };
     if (token !== operation) return;
     detail = result;
     $('#route-detail').className = '';
     $('#route-detail').innerHTML = `<div class="detail-title"><span class="route-badge large" style="--route-color:${safeColor(result.route.color)}">${e(result.route.shortName)}</span><div><div class="eyebrow">${e(agency.name)}</div><h1 tabindex="-1">${e(result.route.name)}</h1></div><div class="detail-stats" id="detail-stats"></div></div>
-      <div class="route-layout"><div class="map-wrap"><div id="route-map" class="map" role="region" aria-label="Route map with stops and bus directions"></div><div class="map-caption"><span><i class="legend-line" style="background:${safeColor(result.route.color)}"></i>Route</span><span>○ Stop</span><span>↑ Bus heading</span><span>Grey = stale position</span><span>Brief GPS smoothing</span></div></div>
+      <div class="route-layout"><div class="map-wrap"><div id="route-map" class="map" role="region" aria-label="Route map with stops and bus directions"></div><div class="map-caption"><span><i class="legend-line" style="background:${safeColor(result.route.color)}"></i>Route</span><span>○ Stop</span><span>↑ Bus heading</span><span>Grey = outdated / unconfirmed</span><span>Brief GPS smoothing</span></div></div>
       <aside class="stop-panel"><div class="panel-heading"><h2>Along the way</h2><label class="sr-only" for="route-direction">Route direction</label><select id="route-direction"><option value="">All directions</option>${result.patterns.map(pattern => `<option value="${e(pattern.id)}">${e(pattern.direction)}</option>`).join('')}</select></div><div id="stop-detail" aria-live="polite"></div><div id="route-stops"></div></aside></div>
       <div class="route-notes"><div id="service-messages">${warning(result.messages, 'service')}</div><div id="route-warnings">${warning(result.warnings)}</div></div>
       <div class="vehicles-section"><h2>On the road</h2><p class="muted">Positions refresh every 15 seconds. Arrows show the reported heading.</p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
@@ -270,7 +280,7 @@ async function showStop(stop: Stop) {
 function renderVehicles() {
   if (!detail || view !== 'detail') return;
   $('#detail-stats').innerHTML = `<strong>${detail.vehicles.length}</strong><span>buses reported</span>`;
-  $('#vehicle-list').innerHTML = detail.vehicles.map(bus => `<article class="vehicle-card"><span class="vehicle-heading" style="transform:rotate(${Number.isFinite(bus.heading) ? bus.heading : 0}deg)" aria-hidden="true">↑</span><div><strong>Bus ${e(bus.id)}</strong><p>${e(bus.destination || detail!.route.name)}</p><small>${e(headingLabel(bus.heading))} · ${Math.round(bus.heading)}° · ${e(vehicleAge(bus.updatedAt))}</small>${!bus.updatedAt || Date.now() - bus.updatedAt > 120000 ? '<span class="stale-label">Last known position</span>' : ''}</div></article>`).join('') || '<div class="empty">No buses are currently reported on this route.</div>';
+  $('#vehicle-list').innerHTML = uniqueVehicles(detail.vehicles).map(bus => `<article class="vehicle-card"><span class="vehicle-heading" style="transform:rotate(${Number.isFinite(bus.heading) ? bus.heading : 0}deg)" aria-hidden="true">↑</span><div><strong>Bus ${e(bus.id)}</strong><p>${e(bus.destination || detail!.route.name)}</p><small>${e(headingLabel(bus.heading))} · ${Math.round(bus.heading)}° · ${e(vehicleAge(bus.updatedAt))}</small>${vehicleIsStale(bus) ? '<span class="stale-label">Last known position</span>' : ''}</div></article>`).join('') || '<div class="empty">No buses are currently reported on this route.</div>';
 }
 
 function pointField(kind: 'origin' | 'destination', label: string, value: string) {
@@ -301,6 +311,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
     map?.showPoints(origin, destination);
   }, athensLocked);
   map.showPoints(origin, destination);
+  void refreshLiveVehicles(true);
   const token = operation, current = service;
   let stopHints = knownStops(agency);
   // Fetch only stop directories; address typing never triggers a full ETA crawl.
@@ -453,11 +464,11 @@ async function selectAgency(choice: Agency) {
   await showRoutes(true);
 }
 
-window.setInterval(async () => {
-  if (document.hidden || pollBusy || !(view==='detail' && detail || view==='plan' && displayedJourney && network)) return;
-  pollBusy=true; const token=operation;
+async function refreshLiveVehicles(initial = false) {
+  if (document.hidden || pollingOperation === operation || !(view==='detail' && detail || view==='plan' && (initial || displayedJourney && network))) return;
+  const token=operation; pollingOperation=token;
   try {
-    const vehicles=vehiclesInScope(await service.refreshVehicles(),athensLocked);
+    const vehicles=vehiclesInScope(uniqueVehicles(await service.refreshVehicles(initial)),athensLocked);
     if (token!==operation) return;
     if (view==='detail' && detail) {
       detail.vehicles=vehicles.filter(bus=>bus.routeId===detail!.route.id);
@@ -476,8 +487,9 @@ window.setInterval(async () => {
     const message=warning([`Live refresh failed: ${errorMessage(error)} Showing the last received positions.`]);
     if (view==='detail') writeNotes('#route-warnings',message);
     else if (view==='plan') writeNotes('#trip-notes',message);
-  } finally { pollBusy=false; }
-},15000);
+  } finally { if (pollingOperation === token) pollingOperation=undefined; }
+}
+window.setInterval(() => void refreshLiveVehicles(),15000);
 
 window.setInterval(() => { if (view !== 'agencies') void crawlLive(); }, 60000);
 

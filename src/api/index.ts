@@ -51,8 +51,8 @@ export class TransitService {
     }
     return this.routes;
   }
-  async refreshVehicles(): Promise<Vehicle[]> {
-    const data = await this.client.get(this.agency.kind === 'uga' ? ugaEndpoints.buses : infoEndpoints(this.agency.restUrl!).visibleRoutes, 10000);
+  async refreshVehicles(fresh = false): Promise<Vehicle[]> {
+    const data = await this.client.get(this.agency.kind === 'uga' ? ugaEndpoints.buses : infoEndpoints(this.agency.restUrl!).visibleRoutes, 10000, 'json', fresh);
     return normalizeVehicles(data, this.agency.kind === 'uga' ? 'uga' : 'infopoint');
   }
   async getMessages(): Promise<string[]> {

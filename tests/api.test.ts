@@ -73,6 +73,20 @@ describe('transport reliability', () => {
     expect(fetcher).toHaveBeenCalledTimes(1); expect(fetcher.mock.calls[0][0]).toBe(`/api?url=${encodeURIComponent(ugaEndpoints.routes)}`);
     expect(client.calls[0].status).toBe('ok'); client.clear(); await client.get(ugaEndpoints.routes); expect(fetcher).toHaveBeenCalledTimes(2);
   });
+  it('bypasses cached vehicle reads on map load while coalescing in-flight GET and POST requests', async () => {
+    let version = 0;
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({version: ++version})));
+    const client = new ApiClient(fetcher as typeof fetch);
+    const url = 'https://passiogo.com/mapGetData.php?getBuses=1';
+    await client.get(url);
+    const fresh = await Promise.all([client.get(url,10000,'json',true),client.get(url,10000,'json',true),client.get(url)]);
+    expect(fresh).toEqual([{version:2},{version:2},{version:2}]);
+    expect(await client.get(url)).toEqual({version:2});
+    await client.post(url,{systemSelected0:'3994'});
+    await Promise.all([client.post(url,{systemSelected0:'3994'},10000,true),client.post(url,{systemSelected0:'3994'},10000,true)]);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(await client.post(url,{systemSelected0:'3994'})).toEqual({version:4});
+  });
   it('reports HTTP, invalid JSON and timeout errors instead of returning fake buses', async () => {
     const http = new ApiClient(vi.fn(async () => new Response('', {status:503})) as typeof fetch); await expect(http.get('https://x.test')).rejects.toThrow('503');
     const json = new ApiClient(vi.fn(async () => new Response('{')) as typeof fetch); await expect(json.get('https://x.test')).rejects.toThrow('invalid JSON');

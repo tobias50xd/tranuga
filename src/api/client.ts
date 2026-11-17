@@ -9,19 +9,19 @@ export class ApiClient {
   private pending = new Map<string, Promise<unknown>>();
   constructor(private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis), private readonly gateway = '/api', private readonly timeout = 15000) {}
   clear() { this.cache.clear(); }
-  async get<T = unknown>(url: string, ttl = 15000, format: 'json' | 'text' = 'json'): Promise<T> {
-    return this.cached<T>(url, ttl, format);
+  async get<T = unknown>(url: string, ttl = 15000, format: 'json' | 'text' = 'json', fresh = false): Promise<T> {
+    return this.cached<T>(url, ttl, format, undefined, fresh);
   }
   /** Only the gateway's allowlisted, read-only Passio queries accept POST. */
-  async post<T = unknown>(url: string, payload: Record<string, unknown>, ttl = 15000): Promise<T> {
-    return this.cached<T>(url, ttl, 'json', JSON.stringify(payload));
+  async post<T = unknown>(url: string, payload: Record<string, unknown>, ttl = 15000, fresh = false): Promise<T> {
+    return this.cached<T>(url, ttl, 'json', JSON.stringify(payload), fresh);
   }
-  private async cached<T>(url: string, ttl: number, format: 'json' | 'text', body?: string): Promise<T> {
+  private async cached<T>(url: string, ttl: number, format: 'json' | 'text', body?: string, fresh = false): Promise<T> {
     const key = `${body === undefined ? 'GET' : 'POST'}:${format}:${url}:${body ?? ''}`;
-    const cached = this.cache.get(key);
-    if (cached && cached.expires > Date.now()) return cached.value as T;
     const running = this.pending.get(key);
     if (running) return running as Promise<T>;
+    const cached = this.cache.get(key);
+    if (!fresh && cached && cached.expires > Date.now()) return cached.value as T;
     const promise = this.request<T>(url, format, body).then(value => { if (ttl > 0) this.cache.set(key, { expires: Date.now() + ttl, value }); return value; }).finally(() => this.pending.delete(key));
     this.pending.set(key, promise);
     return promise;

@@ -180,6 +180,20 @@ describe('vehicle identity, position and freshness agreement', () => {
     ])).toEqual([]);
     expect(merger.counts.conflicts).toBe(1);
   });
+  it('replaces a stale primary point with the provider-current clock-only point for the same bus', () => {
+    const result = session().vehicles([
+      observe(A, [vehicle({updatedAt:NOW-360000,lat:33.97})]),
+      observe(B, [vehicle({updatedAt:undefined,active:true,lat:33.95})]),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({lat:33.95,active:true,agreement:'single-source'});
+    expect(result[0].updatedAt).toBeUndefined();
+    expect(result[0].sources).toHaveLength(2);
+  });
+  it('does not let explicitly current markers with stale GPS times manufacture a quorum', () => {
+    const merger = new MergeSession(undefined,NOW,'test',2);
+    expect(merger.vehicles([observe(A,[vehicle({active:true,updatedAt:NOW-360000})]),observe(B,[vehicle({active:true,updatedAt:NOW-360000})])])).toEqual([]);
+  });
   it('collapses current and outdated rows for one bus and keeps the current marker', () => {
     const [result] = session().vehicles([observe(A, [
       vehicle({ routeId:'old', lat:33.97, active:false }),

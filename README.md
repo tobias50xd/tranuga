@@ -300,8 +300,9 @@ The source bar reports health and corroborated/single-source/conflict/saved-back
 | Client request cache | Coalesced identical requests; 15 s default, 15 s timeout; endpoint-specific longer TTLs. |
 | Last-good snapshots | Browser localStorage key `tranuga.transit-replicas.v1`; at most 64 resource slots, a 2,000,000-character serialized persistence cap, and 24 h maximum static snapshot age. Unavailable/full storage falls back to memory. |
 | Saved live eligibility | Cached active flags/predictions expire after 2 min; non-quorum provider positions can remain visible for at most 5 min, while three-node Passio positions still require a fresh two-replica quorum. Original measurement age still controls current-service eligibility. Original measurement times and selected `snapshotAt` survive nested replication. Static retention does not authorize stale service. |
-| Visible-tab lightweight crawl | Every 60 s: catalogs, vehicles and alerts. Hidden tabs and overlapping crawls are skipped. |
-| Open-route positions | Every 15 s while visible; overlapping polls are skipped. |
+| Initial catalog | Fetch catalogs and vehicles concurrently before displaying route cards. Fresh absolute vehicle evidence can confirm publication-only routes; an unavailable vehicle feed leaves the catalog usable with unconfirmed status. No topology/arrival crawl is needed. |
+| Visible-tab lightweight crawl | Every 60 s: catalogs, vehicles and alerts. Apply the merged activity result to the route cards as well as source health. Hidden tabs and overlapping crawls are skipped. |
+| Map startup and positions | Request positions immediately when loading a route or opening the planner, bypassing the short browser vehicle cache while coalescing in-flight requests. A route's initial map waits for this result, so it does not show temporary grey placeholders. Route-detail and completed-journey positions then refresh every 15 s while visible; overlapping polls for the same view are skipped. Replies from a previous view cannot update the new map. |
 | Full network crawl | **Sync all sources** or planning; the adapter first loads the complete route catalog and ordered topology for every returned route, then fetches current vehicles and batched stop predictions. UGA tracking/InfoPoint departures and Passio ETA batches are capped at four concurrent requests; each Passio batch has at most 40 stops. The three mirror adapters run concurrently. |
 | Edge response cache | Most live reads 10 s; Passio catalog 60 s; static/config/directory/topology/KML/provider metadata/timetable 1 h. Full per-layer policy is in [feature.md](feature.md). |
 
@@ -344,13 +345,15 @@ The calculate button shows **Calculating route…** and an accessible indetermin
 
 [vehicle-motion.ts](src/vehicle-motion.ts) smooths **displayed markers between received observations**. It preserves original data for planning, replication, storage, popup update ages and service decisions. Route-detail and completed-journey maps refresh positions every 15 seconds while visible; geometry is not recalculated by a marker refresh.
 
+Each canonical bus has one marker and one list entry. Reconcile the entire fleet **before** filtering to the selected/used routes, so an outdated route assignment cannot remain beside the current one. Current Passio reports (`outdated=0`, with the required replica quorum) use route colors even when only a local clock time is available; their update age still reads **Update time unavailable**, and they cannot establish planning freshness without an absolute measurement time. Explicitly outdated reports, GPS fixes older than two minutes or over one minute in the future, saved backups, and unknown-time reports without a current flag remain grey. A live provider-current report supersedes a stale primary report of the same bus. Activity/provenance changes apply even when coordinates and timestamps have not changed.
+
 | Guard | Display policy |
 | --- | --- |
 | Fresh, increasing observation times; same bus and route | Interpolate toward the accepted fix for at most **1.2 s**, with shortest-angle heading rotation. |
 | Distance from the latest accepted GPS fix | At most **20 m** throughout the tween; larger moves first catch up to within that cap. |
 | Observations more than 60 s apart, movement >120 m, or implied speed >25 m/s | Snap to the received position. |
 | Unknown/stale time (>2 min), time >1 s in the future, saved fallback, or route reassignment | Snap; no invented motion. |
-| Repeated cached fix / out-of-order timestamp | Keep the current tween / ignore the older fix. |
+| Repeated cached fix / out-of-order timestamp | Keep the current tween while accepting updated metadata / ignore the older fix, except a provider-current report replacing an explicitly outdated point (snap). |
 | Reduced motion / hidden page / removed map | Snap or finish at the known fix; cancel animation frames and listeners. |
 
 There is **no extrapolation beyond the received fix**, and coordinates, headings and observation timestamps in the source data are not averaged or rewritten. The 20 m cap describes display lag relative to an accepted reported fix; provider GPS error, network delay and the bus's true current position remain unknown. Short straight-line tweening can cross a corner within that cap. This provides brief smoothing with bounded extra display error, rather than promising continuous measured motion between polls. Animation state is local to the map and is cleared on navigation/network changes.

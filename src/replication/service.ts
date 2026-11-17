@@ -11,7 +11,7 @@ export interface TransitProvider {
   getRoute(id: string): Promise<RouteDetail>;
   getStop(id: string): Promise<StopDetail>;
   getNetwork(): Promise<Network>;
-  refreshVehicles(): Promise<Vehicle[]>;
+  refreshVehicles(fresh?: boolean): Promise<Vehicle[]>;
   getMessages(): Promise<string[]>;
   getSystemInfo?(): Promise<PassioSystemInfo>;
   searchBuses?(query: string): Promise<Vehicle[]>;
@@ -195,11 +195,21 @@ export class ReplicatedTransitService implements TransitProvider {
   }
   /** Full configured-network crawl; only public transit data is retained. */
   async sync(): Promise<Network> { return this.getNetwork(); }
+  /** Initial/periodic catalog includes live evidence without loading full topology or ETAs. */
+  async getLiveRoutes(): Promise<Route[]> {
+    return this.run('live-routes', async () => {
+      const [routes, vehicles] = await Promise.all([this.listRoutes(), this.refreshVehicles().catch(() => [])]);
+      return this.session().currentRoutes(routes, vehicles);
+    });
+  }
   /** Lightweight periodic crawl. Large stop-prediction batches remain on-demand. */
-  async crawlLive(): Promise<void> { await Promise.allSettled([this.listRoutes(), this.refreshVehicles(), this.getMessages()]); }
-  async refreshVehicles(): Promise<Vehicle[]> {
+  async crawlLive(): Promise<Route[] | undefined> {
+    const [routes] = await Promise.allSettled([this.getLiveRoutes(), this.getMessages()]);
+    return routes.status === 'fulfilled' ? routes.value : undefined;
+  }
+  async refreshVehicles(fresh = false): Promise<Vehicle[]> {
     return this.run('vehicles', async () => {
-      const input = await this.collect('vehicles', source => source.service.refreshVehicles(), (value): value is Vehicle[] => arrayOf(value, isVehicle));
+      const input = await this.collect('vehicles', source => source.service.refreshVehicles(fresh), (value): value is Vehicle[] => arrayOf(value, isVehicle));
       const session = this.session(), result = session.vehicles(input); this.finish(session); return result;
     });
   }
