@@ -138,3 +138,18 @@ nav .menu-toggle:hover{border-color:#879a7e}
 @media(max-width:680px){.route-notes{grid-template-columns:1fr;gap:0}.favorite-button{top:11px;right:10px}.note-peek{display:block;margin:3px 0 0 15px}.journey-legend{font-size:.6rem;gap:10px}}
 @media(prefers-reduced-motion:reduce){.calculation-spinner{animation:none}}
 .button .calculation-label{font-size:inherit}
+
+.map-locate-control{position:relative;background:var(--paper)}
+.map-locate-button{display:grid;place-items:center;position:relative;width:44px;height:44px;padding:9px;border:0;border-radius:4px;background:var(--paper);color:var(--ink);cursor:pointer}
+.map-locate-button:hover{background:var(--line)}
+.map-locate-button:focus-visible{outline:3px solid #1a73e8;outline-offset:2px}
+.map-locate-button:disabled{cursor:wait;opacity:.7}
+.map-locate-button svg{width:24px;height:24px}
+.map-locate-button[aria-busy=true] svg{opacity:0}
+.map-locate-button[aria-busy=true]:after{content:"";position:absolute;width:20px;height:20px;border:2px solid var(--line);border-top-color:#1a73e8;border-radius:50%;animation:location-spin .8s linear infinite}
+.map-location-status{position:absolute;right:54px;bottom:0;width:max-content;max-width:min(230px,calc(100vw - 120px));padding:9px 12px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);font:500 12px/1.5 Manrope,sans-serif;box-shadow:0 2px 8px #0002}
+.map-location-status[hidden]{display:none}
+.map-location-status.is-error{border-color:var(--red)}
+.user-location-marker>span{display:block;width:20px;height:20px;border:3px solid white;border-radius:50%;background:#1a73e8;box-shadow:0 1px 6px #0006}
+@keyframes location-spin{to{transform:rotate(1turn)}}
+@media(prefers-reduced-motion:reduce){.map-locate-button[aria-busy=true]:after{animation:none}}

@@ -245,11 +245,92 @@ test('map picking and swapping preserve named points', async ({ page }) => {
 test('uses browser geolocation and reports denial with recovery', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']); await context.setGeolocation({ latitude: 33.948, longitude: -83.377 });
   await mockTransit(page); await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
-  await page.getByRole('button', { name: 'My location' }).click();
+  await page.getByRole('button', { name: 'My location', exact: true }).click();
   await expect(page.locator('#trip-origin')).toHaveValue('Current location');
   await page.evaluate(() => { navigator.geolocation.getCurrentPosition = (_ok, fail) => fail?.({ code: 1 } as GeolocationPositionError); });
-  await page.getByRole('button', { name: 'My location' }).click();
+  await page.getByRole('button', { name: 'My location', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('permission was denied');
+});
+
+async function expectLocationCentered(page: Page, selector: string) {
+  await expect(page.locator(`${selector} .user-location-marker`)).toHaveCount(1);
+  await expect.poll(()=>page.locator(selector).evaluate(element=>{
+    const map=element.getBoundingClientRect(), marker=element.querySelector('.user-location-marker')!.getBoundingClientRect();
+    return Math.hypot(marker.x+marker.width/2-map.x-map.width/2,marker.y+marker.height/2-map.y-map.height/2);
+  })).toBeLessThan(2);
+}
+
+for(const [path,selector] of [['/routes/5750','#route-map'],['/plan','#trip-map']]) {
+  test(`the map location button shows and recenters your position on ${path}`,async({page,context})=>{
+    const stops=fixture.ugaTracking.map(row=>row.stop);
+    const latitude=(Math.min(...stops.map(stop=>stop.latitude))+Math.max(...stops.map(stop=>stop.latitude)))/2;
+    const longitude=(Math.min(...stops.map(stop=>stop.longitude))+Math.max(...stops.map(stop=>stop.longitude)))/2;
+    await context.grantPermissions(['geolocation']);await context.setGeolocation({latitude,longitude,accuracy:25});
+    await page.addInitScript(()=>{
+      const browserLocate=navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
+      const state=window as unknown as {locationRequests:number};state.locationRequests=0;
+      navigator.geolocation.getCurrentPosition=(...args)=>{state.locationRequests++;browserLocate(...args);};
+    });
+    await mockTransit(page);await page.goto(path);
+    const button=page.getByRole('button',{name:'Show my location',exact:true});
+    await expect(button).toBeVisible();
+    expect(await page.evaluate(()=>(window as unknown as {locationRequests:number}).locationRequests)).toBe(0);
+    if(path==='/plan') {await page.locator('#pick-origin').click();await button.focus();await button.press('Enter');}
+    else await button.click();
+    await expectLocationCentered(page,selector);
+    await expect(page.locator('.user-location-accuracy')).toHaveCount(1);
+    await expect(page.locator('.map-location-status')).toContainText('Accuracy ±25 m');
+    await expect(page.getByRole('button',{name:/^Route lock/})).toHaveAttribute('aria-pressed','true');
+    if(path==='/plan') {await expect(page.locator('#trip-origin')).toHaveValue('');await expect(page.locator('#trip-destination')).toHaveValue('');}
+    const bounds=(await page.locator(selector).boundingBox())!;
+    await page.mouse.move(bounds.x+bounds.width/2+60,bounds.y+bounds.height/2);
+    await page.mouse.down();await page.mouse.move(bounds.x+bounds.width/2+180,bounds.y+bounds.height/2,{steps:8});await page.mouse.up();
+    await button.click();await expectLocationCentered(page,selector);
+    await expect(page.locator('.user-location-accuracy')).toHaveCount(1);
+    expect(await page.evaluate(()=>(window as unknown as {locationRequests:number}).locationRequests)).toBe(2);
+  });
+}
+
+test('the map location button explains denial and can retry without changing the trip',async({page})=>{
+  await mockTransit(page);await page.goto('/plan');await page.locator('#trip-origin').fill('33.95,-83.41');
+  await page.evaluate(()=>{navigator.geolocation.getCurrentPosition=(_success,error)=>error?.({code:1} as GeolocationPositionError);});
+  const button=page.getByRole('button',{name:'Show my location',exact:true});await button.click();
+  await expect(page.locator('.map-location-status[role="alert"]')).toContainText('permission was denied');
+  await expect(button).toBeEnabled();await expect(button).toHaveAttribute('aria-busy','false');
+  await expect(page.locator('.user-location-marker')).toHaveCount(0);
+  await page.evaluate(()=>{navigator.geolocation.getCurrentPosition=success=>success({coords:{latitude:33.948,longitude:-83.377,accuracy:12}} as GeolocationPosition);});
+  await button.click();await expectLocationCentered(page,'#trip-map');
+  await expect(page.locator('.map-location-status')).toHaveAttribute('role','status');
+  await expect(page.locator('#trip-origin')).toHaveValue('33.95,-83.41');
+});
+
+test('centering a location outside route bounds releases the lock and preserves the calculated trip',async({page,context})=>{
+  await context.grantPermissions(['geolocation']);await context.setGeolocation({latitude:39.33,longitude:-82.1,accuracy:30});
+  await transferTrip(page);
+  await page.getByRole('button',{name:'Show my location',exact:true}).click();
+  await expectLocationCentered(page,'#trip-map');
+  await expect(page.getByRole('button',{name:/^Route lock/})).toHaveAttribute('aria-pressed','false');
+  await expect(page.locator('.map-location-status')).toContainText('Route lock turned off');
+  await expect(page.locator('.trip-summary')).toBeVisible();await expect(page.locator('.journey-ride')).toHaveCount(2);
+  await expect(page.locator('#trip-origin')).toHaveValue('33.95,-83.41');await expect(page.locator('#trip-destination')).toHaveValue('33.95,-83.35');
+  expect(await page.evaluate(()=>localStorage.getItem('tranuga.route-lock.v1'))).toBe('false');
+  const stored=await page.evaluate(()=>localStorage.getItem('tranuga.transit-replicas.v1')||'');
+  expect(stored).not.toContain('39.33');expect(stored).not.toContain('-82.1');
+});
+
+test('a pending map location request stays busy and cannot update a map after navigation',async({page})=>{
+  await mockTransit(page);await page.goto('/plan');
+  await page.evaluate(()=>{
+    navigator.geolocation.getCurrentPosition=success=>{(window as unknown as {finishLocation:PositionCallback}).finishLocation=success;};
+  });
+  const button=page.getByRole('button',{name:'Show my location',exact:true});await button.click();
+  await expect(button).toBeDisabled();await expect(button).toHaveAttribute('aria-busy','true');
+  await expect(page.locator('.map-location-status')).toContainText('Finding your location');
+  await page.locator('nav [data-nav="routes"]').click();await expect(page.locator('.route-card')).not.toHaveCount(0);
+  await page.evaluate(()=>{(window as unknown as {finishLocation:PositionCallback}).finishLocation({coords:{latitude:33.948,longitude:-83.377,accuracy:15}} as GeolocationPosition);});
+  await page.locator('nav [data-nav="plan"]').click();
+  await expect(page.locator('.user-location-marker')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Show my location',exact:true})).toBeEnabled();
 });
 
 test('validates coordinates and reports unreachable destinations', async ({ page }) => {
@@ -603,7 +684,7 @@ test('route lock allows address hints and current locations outside Athens Georg
   await expect(page.locator('#trip-origin-hints [role="option"]')).toHaveCount(2);
   await page.getByRole('option').filter({hasText:'Ohio landmark'}).click();
   await expect(page.locator('#trip-origin')).toHaveValue('Ohio landmark');
-  await page.getByRole('button', { name:'My location' }).click();
+  await page.getByRole('button', { name:'My location', exact:true }).click();
   await expect(page.locator('#trip-origin')).toHaveValue('Current location');
 });
 

@@ -4,6 +4,12 @@ The November 13 UI refactor acceptance run passed **385 deterministic tests and 
 
 The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/runs/43353286621) completed verification and deployment successfully, publishing [tranuga.tobias-seeanner.workers.dev](https://tranuga.tobias-seeanner.workers.dev). Inspect the latest action for publication of subsequent revisions; local validation alone is not a deployment result.
 
+## Map location control
+
+The route-detail and trip-planner maps have an explicit one-shot browser-location button, a blue position marker and reported accuracy circle. The control centers the position, supports repeated recentering without duplicates, and preserves route/trip selections. If centering would violate route bounds, it releases route lock and updates the menu and saved boolean setting. It makes no transit-provider request or coordinate-storage write. Permission errors, unsupported location, timeouts, pending state and late replies after navigation are handled without inventing a position.
+
+The combined revision, including the active-only favorite pinning and trip-button spinner, passed **462 deterministic tests** (nine opt-in live cases skipped), **106 desktop/mobile browser tests**, TypeScript, the production build and Wrangler bundle dry run. Browser location is mocked; tests verify keyboard activation, actual marker-to-map centering, reported accuracy, permission denial/retry, preserved trip points/results, lock release, request-on-press behavior and disposal of replies to a removed map. Validation used an isolated checkout and preview port to preserve concurrent workspace work.
+
 ## Route lock — November 17
 
 Route lock replaces the old Athens area filter with bounds derived from displayed route or used-trip geometry. Zoom-out stops at the route overview; close-up zoom remains available. Panning retains half of the smaller route/viewport extent in each projected axis, including diagonal drags and viewport resizing. A planner without a calculated trip remains free to explore; editing a result clears the old bounds. Toggling the control preserves the map, selected network, trip points, result and bus data without another API read.

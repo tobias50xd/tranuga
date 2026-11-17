@@ -8,6 +8,7 @@ import { Favorites } from './favorites';
 import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-presentation';
 import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
 import { PlaceInput, PlaceSearch } from './places';
+import { getCurrentLocation } from './location';
 import { readPreferences, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
 import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
 import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehicleAge, headingLabel } from './ui';
@@ -89,11 +90,12 @@ $('#theme-toggle').onclick = () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = theme; savePreference(THEME_KEY, theme); renderPreferences();
 };
-$('#route-lock-toggle').onclick = () => {
-  routeLocked = !routeLocked; savePreference(ROUTE_LOCK_KEY, String(routeLocked)); renderPreferences();
+function setRouteLock(locked: boolean) {
+  routeLocked = locked; savePreference(ROUTE_LOCK_KEY, String(routeLocked)); renderPreferences();
   map?.setRouteLocked(routeLocked);
   announce(routeLocked ? 'Route lock on. Map navigation follows the selected route.' : 'Route lock off. Map navigation is unrestricted.');
-};
+}
+$('#route-lock-toggle').onclick = () => setRouteLock(!routeLocked);
 renderPreferences();
 function focusTitle() { main.querySelector<HTMLElement>('h1')?.focus({ preventScroll: true }); }
 function writeNotes(selector: string, html: string) {
@@ -214,7 +216,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
       <aside class="stop-panel"><div class="panel-heading"><h2>Along the way</h2><label class="sr-only" for="route-direction">Route direction</label><select id="route-direction"><option value="">All directions</option>${result.patterns.map(pattern => `<option value="${e(pattern.id)}">${e(pattern.direction)}</option>`).join('')}</select></div><div id="stop-detail" aria-live="polite"></div><div id="route-stops"></div></aside></div>
       <div class="route-notes"><div id="service-messages">${warning(result.messages, 'service')}</div><div id="route-warnings">${warning(result.warnings)}</div></div>
       <div class="vehicles-section"><h2>On the road</h2><p class="muted">Positions refresh every 15 seconds. Arrows show the reported heading.</p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
-    map = new TransitMap($('#route-map'), agency.center || center, undefined, routeLocked);
+    map = new TransitMap($('#route-map'), agency.center || center, undefined, routeLocked, setRouteLock);
     map.showRoute(result, stop => void showStop(stop));
     $<HTMLSelectElement>('#route-direction').onchange = event => {
       selectedDirection = (event.target as HTMLSelectElement).value;
@@ -283,7 +285,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
   setView('plan'); pickMode = undefined; planning = false;
   main.innerHTML = `<section class="container planner-page"><div class="eyebrow">MAKE A CONNECTION</div><div class="page-heading"><div><h1 tabindex="-1">Your way from A to B<span>.</span></h1><p>Search places or stops. We’ll compare the available bus connections.</p></div></div>
     <div class="planner-layout"><aside class="trip-panel"><form id="trip-form"><fieldset id="trip-fields">
-      ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button">⌖ My location</button></div>
+      ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button"><span aria-hidden="true">⌖</span> My location</button></div>
       ${pointField('destination', 'Destination', destinationLabel || (destination ? coordinates(destination) : ''))}<div class="field-actions"><button type="button" id="pick-destination" class="text-button">⊕ Pick on map</button><button type="button" id="swap" class="text-button">⇅ Swap</button></div>
       <label class="field-label" for="max-walk">Maximum walk to / from the bus</label><select id="max-walk"><option value="800">800 m · about 10 minutes</option><option value="1200" selected>1.2 km · about 15 minutes</option><option value="2000">2 km · about 25 minutes</option></select>
       <button class="button primary full" type="submit" id="find-trip"><span id="trip-progress" class="calculation-spinner" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span><span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span></button>
@@ -299,7 +301,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
     pickMode = undefined; $('#map-instruction').textContent = 'Point selected. Choose the other point or find your trip.';
     resetTripResult();
     map?.showPoints(origin, destination);
-  }, routeLocked);
+  }, routeLocked, setRouteLock);
   map.showPoints(origin, destination);
   void refreshLiveVehicles(true);
   const token = operation, current = service;
@@ -345,20 +347,13 @@ function choosePoint(kind: 'origin' | 'destination') {
   announce($('#map-instruction').textContent!);
 }
 
-function geolocate(): Promise<Coordinate> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) { reject(new Error('Location is unavailable in this browser. Search for a place or pick a point on the map.')); return; }
-    navigator.geolocation.getCurrentPosition(position => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }), error => reject(new Error(error.code === 1 ? 'Location permission was denied. Search for a place or pick a start on the map.' : 'Could not determine your location. Pick a point on the map.')), { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
-  });
-}
-
 async function locateUser() {
   if (planning) return;
   const token = operation;
   const fields = $<HTMLFieldSetElement>('#trip-fields'); fields.disabled = true; planning = true;
   $('#trip-status').textContent = 'Finding your location…';
   try {
-    const point = await geolocate(); if (token !== operation) return;
+    const point = await getCurrentLocation(); if (token !== operation) return;
     origin = point; originLabel = 'Current location'; pointInputs.origin?.setValue(originLabel);
     resetTripResult();
     map?.showPoints(origin, destination); map?.focus(point);
@@ -424,7 +419,7 @@ async function searchAgencies(kind: 'nearby' | 'code') {
   const token = operation; const revision = ++agencyRevision;
   $('#agency-status').textContent = kind === 'nearby' ? 'Finding agencies near you…' : 'Looking up authority code…';
   try {
-    const result = kind === 'nearby' ? await locateAgencies(await geolocate()) : await findAgenciesByCode($<HTMLInputElement>('#agency-code').value.trim());
+    const result = kind === 'nearby' ? await locateAgencies(await getCurrentLocation()) : await findAgenciesByCode($<HTMLInputElement>('#agency-code').value.trim());
     if (token !== operation || revision !== agencyRevision) return;
     agencyChoices = result; $<HTMLInputElement>('#agency-search').value = '';
     $('#agency-status').textContent = `${result.length} agencies found`; renderAgencies();

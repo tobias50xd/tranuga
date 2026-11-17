@@ -7,6 +7,7 @@ import { routeViewportBounds } from './route-viewport';
 import { rideGeometry, journeyTransfers } from './journey-map';
 import { VehicleMotion } from './vehicle-motion';
 import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
+import { getCurrentLocation } from './location';
 interface BusMarker { marker: L.Marker; motion: VehicleMotion }
 
 export class TransitMap {
@@ -16,6 +17,10 @@ export class TransitMap {
   private vehicles = L.featureGroup();
   private journey = L.featureGroup();
   private points = L.layerGroup();
+  private userLocation = L.layerGroup();
+  private locationButton!: HTMLButtonElement;
+  private locationStatus!: HTMLDivElement;
+  private locating = false;
   private routeLocked: boolean;
   private routeBounds?: L.LatLngBounds;
   private applyingLock = false;
@@ -24,7 +29,7 @@ export class TransitMap {
   private lifetime = new AbortController();
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-  constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void, routeLocked = false) {
+  constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void, routeLocked = false, private onRouteLockChange?: (locked: boolean) => void) {
     this.routeLocked = routeLocked;
     // Leaflet 1.9 queues zoom callbacks that can outlive a removed map. Use immediate
     // zooms so navigation can safely destroy a map in the same animation frame.
@@ -36,12 +41,70 @@ export class TransitMap {
     }).addTo(this.map);
     this.routes.addTo(this.map); this.stops.addTo(this.map); this.vehicles.addTo(this.map);
     this.journey.addTo(this.map); this.points.addTo(this.map);
+    this.userLocation.addTo(this.map); this.addLocationControl();
     this.map.on('click', event => { onPick?.({ lat: event.latlng.wrap().lat, lon: event.latlng.wrap().lng }); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.finishMotion(); }, { signal:this.lifetime.signal });
     this.map.on('resize zoomend', () => this.updateRouteLock());
   }
 
   setRouteLocked(locked: boolean) { this.routeLocked = locked; this.updateRouteLock(); }
+
+  private addLocationControl() {
+    const control = new L.Control({position:'bottomright'});
+    control.onAdd = () => {
+      const container = L.DomUtil.create('div','leaflet-bar map-locate-control');
+      this.locationButton = document.createElement('button');
+      this.locationButton.type='button'; this.locationButton.className='map-locate-button';
+      this.locationButton.title='Show my location'; this.locationButton.setAttribute('aria-label','Show my location');
+      this.locationButton.setAttribute('aria-busy','false');
+      this.locationButton.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>';
+      this.locationStatus=document.createElement('div'); this.locationStatus.className='map-location-status';
+      this.locationStatus.setAttribute('role','status'); this.locationStatus.setAttribute('aria-live','polite'); this.locationStatus.hidden=true;
+      container.append(this.locationButton,this.locationStatus);
+      L.DomEvent.disableClickPropagation(container); L.DomEvent.disableScrollPropagation(container);
+      L.DomEvent.on(container,'keydown',L.DomEvent.stopPropagation);
+      this.locationButton.addEventListener('click',()=>void this.locate(),{signal:this.lifetime.signal});
+      return container;
+    };
+    control.addTo(this.map);
+  }
+
+  private locationMessage(message: string, error = false) {
+    this.locationStatus.hidden=false; this.locationStatus.textContent=message;
+    this.locationStatus.setAttribute('role',error?'alert':'status');
+    this.locationStatus.setAttribute('aria-live',error?'assertive':'polite');
+    this.locationStatus.classList.toggle('is-error',error);
+  }
+
+  private async locate() {
+    if (this.locating || this.lifetime.signal.aborted) return;
+    this.locating=true; this.locationButton.disabled=true; this.locationButton.setAttribute('aria-busy','true');
+    this.locationMessage('Finding your location…');
+    try {
+      const location=await getCurrentLocation();
+      if (this.lifetime.signal.aborted) return;
+      const target=L.latLng(location.lat,location.lon), zoom=Math.min(this.map.getMaxZoom(),Math.max(16,this.map.getZoom()));
+      this.map.setView(target,zoom,{animate:false});
+      let unlocked=false;
+      // Route bounds may clamp a requested center. The explicit location action takes priority.
+      if (this.routeLocked && this.map.latLngToContainerPoint(target).distanceTo(this.map.getSize().divideBy(2))>1) {
+        this.setRouteLocked(false); this.onRouteLockChange?.(false); unlocked=true;
+        this.map.setView(target,zoom,{animate:false});
+      }
+      this.userLocation.clearLayers();
+      const accuracy=location.accuracy===undefined?'':` · Accuracy ±${Math.round(location.accuracy)} m`;
+      if (location.accuracy!==undefined) L.circle(target,{radius:location.accuracy,color:'#1a73e8',weight:1,fillColor:'#1a73e8',fillOpacity:.12,interactive:false,className:'user-location-accuracy'}).addTo(this.userLocation);
+      const marker=L.marker(target,{title:'Your location',zIndexOffset:1500,icon:L.divIcon({className:'user-location-marker',html:'<span aria-hidden="true"></span>',iconSize:[20,20],iconAnchor:[10,10]})});
+      marker.bindPopup(`<strong>Your location</strong>${e(accuracy)}<br>Last requested position`).addTo(this.userLocation);
+      marker.getElement()?.setAttribute('aria-label','Your location');
+      this.locationMessage(`Centered on your location${accuracy}.${unlocked?' Route lock turned off to center here.':''}`);
+    } catch (error) {
+      if (!this.lifetime.signal.aborted) this.locationMessage(error instanceof Error?error.message:'Could not determine your location. Try again.',true);
+    } finally {
+      this.locating=false;
+      if (!this.lifetime.signal.aborted) { this.locationButton.disabled=false; this.locationButton.setAttribute('aria-busy','false'); }
+    }
+  }
 
   private updateRouteLock() {
     if (this.applyingLock) return;

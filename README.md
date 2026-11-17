@@ -9,6 +9,7 @@ A static bus explorer and quickest-trip estimator, deployed with GitHub Actions 
 - **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Calculation shows an indeterminate loading bar. The result map draws only the ridden portions of the selected lines, marks transfer stops with a purple ↔ symbol, and refreshes their bus markers. Notes stay collapsed below the map.
 - **Data reliability:** inspect responding sources, disagreements and saved-backup state. **Sync all sources** crawls the selected network's full route/stop/prediction data. One responding source can still provide a labeled catalog/topology fallback, but a bus location from a three-node Passio network is displayed only after at least two replicas agree. A current Passio point supersedes an outdated duplicate for the same bus.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
+- **Map location:** press the crosshair **Show my location** button above the zoom controls on either map to show a blue position marker, its reported accuracy area, and center the map on yourself. It keeps your selected trip points and results.
 - **Networks:** choose the combined Georgia network, UGA Passio, Athens Public Transit in Ohio or a reviewed InfoPoint agency. Search the directory, locate a nearby agency or enter an authority code. Route lock follows the displayed route in any network.
 
 All clock times use the device timezone except provider timetable clock labels, which retain the operator's stated IANA timezone. Missing dates, route identities and durations remain unknown rather than being invented.
@@ -40,6 +41,14 @@ Both buttons are in the main navigation on desktop and mobile and expose their o
 - Switching the lock on/off updates the existing map without refetching data or clearing the selected network, trip points, result or bus markers. Turning it off restores unrestricted panning and zooming out. All network choices, address hints and provider data remain available with either setting.
 
 The choice is saved under `tranuga.route-lock.v1` (`true`/`false`); a new or invalid preference defaults to locked. If the new key is absent, an existing `tranuga.athens-lock.v1` on/off choice supplies the initial value. Preferences contain no coordinates. If storage is unavailable, both menu controls still work for the current visit.
+
+### Your location on the map
+
+Both route-detail and trip-planner maps have a **Show my location** crosshair button. A press explicitly requests browser location permission, shows a blue dot and the browser's reported accuracy circle in meters when available, and centers the map on that position at street level (keeping a closer zoom if already selected). Press it again after panning to recenter; the marker and accuracy area update without duplicate markers. The blue dot represents the last requested position, not continuous tracking.
+
+If route lock prevents centering your position, this action turns the lock off, updates its menu/saved setting, and explains the change beside the button. You can turn route lock back on to restore route navigation limits. Locating yourself preserves the selected route, displayed journey, start and destination; the separate **My location** button beneath **Start** still fills the trip's starting point.
+
+The control shows a busy state during the request and explains denied permission, unavailable location and timeouts with a retry available. Each press makes one high-accuracy request with a 15-second timeout; the browser may reuse a fix up to 30 seconds old. Leaving a map discards any late reply. This control stores no coordinates and sends none to transit APIs; ordinary OpenStreetMap tile requests still reflect the viewed map area. The location helper is shared with the existing start-field and explicitly requested nearby-network lookup.
 
 ### Application URLs
 
@@ -380,6 +389,7 @@ npx wrangler deploy --dry-run --outdir /tmp/tranuga-worker
 | [worker.test.ts](tests/worker.test.ts) | Approved GET/POST contracts, payload limits, system separation, origin/method validation, proxy/caching failures and comparison privacy. |
 | [journey-map.test.ts](tests/journey-map.test.ts), [vehicle-motion.test.ts](tests/vehicle-motion.test.ts), [favorites.test.ts](tests/favorites.test.ts) | Partial/loop/multipart geometry, transfer identity, bounded interpolation/snap rules, favorite persistence and ordering. |
 | [preferences.test.ts](tests/preferences.test.ts), [route-viewport.test.ts](tests/route-viewport.test.ts) | Theme/route-lock defaults, legacy preference migration, blocked storage and half-overlap pan limits for wide, narrow and degenerate route bounds. |
+| [location.test.ts](tests/location.test.ts) | Explicit one-shot requests, accuracy preservation, coordinate validation, permission/unavailable/timeout errors and unsupported browsers. |
 | [ui.test.ts](tests/ui.test.ts), [presentation.test.ts](tests/presentation.test.ts), [browser tests](tests/e2e/app.spec.ts) | Rendering helpers, service ordering, note classes, place normalization/cache/privacy and desktop/mobile workflows, selection/race guards and failures. |
 
 Provider probes are opt-in:
@@ -389,7 +399,7 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
 ```
 
-The November 17 route-lock checks passed **449 deterministic tests and 94 browser tests**, plus TypeScript and the production build. Nine opt-in live cases were skipped. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures.
+The map-location checks passed **462 deterministic tests and 106 browser tests**, plus TypeScript, the production build and Cloudflare bundle dry run. Nine opt-in live cases were skipped. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures.
 
 ## Source map and maintenance
 
@@ -397,6 +407,7 @@ The November 17 route-lock checks passed **449 deterministic tests and 94 browse
 src/main.ts                 UI, source status, network/provider tools and polling
 src/map.ts                  Leaflet layers and responsive route-relative map bounds
 src/route-viewport.ts       Half-overlap pan limits for route and viewport extents
+src/location.ts             Shared one-shot browser location and error handling
 src/athens.ts               Geographic sampling bounds for the Georgia trip monitor
 src/preferences.ts          Theme/route-lock defaults, migration and storage
 public/theme.js             Early saved/system palette before app rendering
