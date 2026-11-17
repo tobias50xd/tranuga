@@ -125,9 +125,9 @@ nav .menu-toggle:hover{border-color:#879a7e}
 .route-notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px;margin-top:9px}
 .route-notes>div:empty{display:none}
 #trip-notes{margin-top:15px}#trip-notes:empty{display:none}
-.calculation-progress{height:5px;margin:8px 0 0;overflow:hidden;border-radius:3px;background:var(--line)}
-.calculation-progress>span{display:block;width:35%;height:100%;background:var(--red);animation:route-progress 1.1s ease-in-out infinite}
-@keyframes route-progress{from{transform:translateX(-110%)}to{transform:translateX(400%)}}
+.calculation-spinner{display:inline-block;width:19px;height:19px;flex:none;border:2px solid #ffffff66;border-top-color:#fff;border-right-color:#fff;border-radius:50%;animation:route-spinner .7s linear infinite}
+.calculation-spinner[hidden],.submit-arrow[hidden]{display:none}
+@keyframes route-spinner{to{transform:rotate(1turn)}}
 .transfer-marker>span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#7940be;color:white;font-size:22px;font-weight:750;box-shadow:0 1px 7px #0005;position:relative}
 .transfer-marker small{position:absolute;right:-7px;bottom:-5px;display:grid;place-items:center;background:#5b258e;color:#fff;border:1px solid white;border-radius:50%;width:17px;height:17px;font-size:10px}
 .transfer-hint{display:block!important;color:#7940be!important;font-size:.75rem!important;font-weight:700;margin-bottom:6px}
@@ -136,5 +136,5 @@ nav .menu-toggle:hover{border-color:#879a7e}
 .journey-legend{font-size:.65rem;gap:13px}
 .assumptions ul{padding-left:18px}.assumptions li{margin-top:7px}
 @media(max-width:680px){.route-notes{grid-template-columns:1fr;gap:0}.favorite-button{top:11px;right:10px}.note-peek{display:block;margin:3px 0 0 15px}.journey-legend{font-size:.6rem;gap:10px}}
-@media(prefers-reduced-motion:reduce){.calculation-progress>span{animation:none;transform:translateX(90%)}}
+@media(prefers-reduced-motion:reduce){.calculation-spinner{animation:none}}
 .button .calculation-label{font-size:inherit}

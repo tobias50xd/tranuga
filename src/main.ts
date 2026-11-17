@@ -106,7 +106,9 @@ function writeNotes(selector: string, html: string) {
 function setRouteLoading(active: boolean) {
   const button=$<HTMLButtonElement>('#find-trip'); button.setAttribute('aria-busy',String(active));
   button.querySelector('.calculation-label')!.textContent=active?'Calculating route…':'Find quickest bus trip';
-  $('#trip-progress').hidden=!active; $('#trip-form').setAttribute('aria-busy',String(active));
+  $('#trip-progress').hidden=!active;
+  button.querySelector<HTMLElement>('.submit-arrow')!.hidden=active;
+  $('#trip-form').setAttribute('aria-busy',String(active));
 }
 function renderReplication() {
   const report = service.report;
@@ -284,7 +286,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button">⌖ My location</button></div>
       ${pointField('destination', 'Destination', destinationLabel || (destination ? coordinates(destination) : ''))}<div class="field-actions"><button type="button" id="pick-destination" class="text-button">⊕ Pick on map</button><button type="button" id="swap" class="text-button">⇅ Swap</button></div>
       <label class="field-label" for="max-walk">Maximum walk to / from the bus</label><select id="max-walk"><option value="800">800 m · about 10 minutes</option><option value="1200" selected>1.2 km · about 15 minutes</option><option value="2000">2 km · about 25 minutes</option></select>
-      <button class="button primary full" type="submit" id="find-trip"><span class="calculation-label">Find quickest bus trip</span> <span aria-hidden="true">↗</span></button><div id="trip-progress" class="calculation-progress" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden><span></span></div>
+      <button class="button primary full" type="submit" id="find-trip"><span id="trip-progress" class="calculation-spinner" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span><span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span></button>
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
       <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>

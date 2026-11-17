@@ -321,6 +321,7 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await page.getByRole('combobox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.getByRole('progressbar', {name:'Route calculation'})).toBeVisible();
+  await expect(page.locator('#find-trip #trip-progress')).toBeVisible();
   await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy', 'true');
   await expect(page.locator('#trip-origin')).toBeDisabled();
   await expect(page.locator('#swap')).toBeDisabled();
@@ -328,6 +329,7 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await expect(page.locator('.trip-summary')).toBeVisible();
   await expect(page.locator('#trip-origin')).toBeEnabled();
   await expect(page.getByRole('progressbar', {name:'Route calculation'})).toBeHidden();
+  await expect(page.locator('#find-trip #trip-progress')).toBeHidden();
   await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy', 'false');
 });
 
