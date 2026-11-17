@@ -7,16 +7,24 @@ import type { Route } from '../src/types';
 const route=(id:string,operator:Route['operator'],active=true):Route=>({id,operator,active,name:id,shortName:id,color:'#123456',agencyId:'uga'});
 const memory=()=>{const values=new Map<string,string>();return{getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}};};
 describe('route favorites and operator order',()=>{
- it('pins favorites before active routes, with UGA first inside each activity group',()=>{
+ it('pins only active favorites, with UGA first inside each activity group',()=>{
   const routes=[route('1','city'),route('10','uga'),route('2','uga'),route('3','uga',false),route('4','city',false)];
   expect(sortRoutes(routes).map(route=>route.id)).toEqual(['2','10','1','3','4']);
-  expect(sortRoutes(routes,new Set(['4'])).map(route=>route.id)).toEqual(['4','2','10','1','3']);
-  expect(sortRoutes(routes,new Set(['1','3','4'])).map(route=>route.id)).toEqual(['1','3','4','2','10']);
+  expect(sortRoutes(routes,new Set(['4'])).map(route=>route.id)).toEqual(['2','10','1','3','4']);
+  expect(sortRoutes(routes,new Set(['1','3','4'])).map(route=>route.id)).toEqual(['1','2','10','3','4']);
   expect(routes[0].id).toBe('1');
  });
  it('keeps all confirmed active categories above unconfirmed and inactive service',()=>{
   const routes=[route('4','city',false),route('3','uga',false),{...route('5','city'),availability:'unknown' as const},{...route('6','uga'),availability:'published' as const},route('1','city'),route('2','uga'),route('7','other')];
   expect(sortRoutes(routes).map(route=>route.id)).toEqual(['2','1','7','6','3','5','4']);
+  expect(sortRoutes(routes,new Set(['4','5','6'])).map(route=>route.id)).toEqual(['2','1','7','6','3','5','4']);
+ });
+ it.each([undefined,'published','unknown'] as const)('keeps the star but promotes a favorite only while service is confirmed active (availability=%s)',availability=>{
+  const favorite={...route('1','city',false),availability},other=route('2','uga'),favorites=new Set(['1']);
+  expect(sortRoutes([favorite,other],favorites).map(route=>route.id)).toEqual(['2','1']);
+  expect(sortRoutes([{...favorite,active:true,availability:'current'},other],favorites).map(route=>route.id)).toEqual(['1','2']);
+  expect(sortRoutes([favorite,other],favorites).map(route=>route.id)).toEqual(['2','1']);
+  expect(favorites.has('1')).toBe(true);
  });
  it('preserves explicit operator flags and supports reviewed older snapshots',()=>{
   const result=normalizeRoutes([{id:1,isAthensBus:true},{id:2,isAthensBus:false}],'uga','uga');

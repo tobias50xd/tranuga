@@ -692,7 +692,7 @@ test('editing a completed trip removes the previous route lock so new map points
   await expect(page.getByRole('button',{name:/^Route lock/})).toHaveAttribute('aria-pressed','true');
 });
 
-test('favorites persist above active-first groups with UGA priority within each group', async ({ page }) => {
+test('only active favorites stay on top across reloads, with UGA priority within each group', async ({ page }) => {
   await mockTransit(page, {cityRoute:true}); await page.goto('/');
   await expect(page.locator('.route-card')).toHaveCount(3);
   await expect(page.locator('.route-card').nth(0).locator('[data-route]')).toHaveAttribute('data-route','5750');
@@ -703,8 +703,23 @@ test('favorites persist above active-first groups with UGA priority within each 
   await expect(page.locator('[data-favorite="9001"]')).toHaveAttribute('aria-pressed','true');
   await page.reload(); await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','9001');
   await page.locator('[data-favorite="9001"]').click(); await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','5750');
-  await page.locator('[data-favorite="5741"]').click(); await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  await page.locator('[data-favorite="5741"]').click(); await expect(page.locator('.route-card').last().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  await expect(page.locator('[data-favorite="5741"]')).toHaveAttribute('aria-pressed','true');
+  await page.reload(); await expect(page.locator('.route-card').last().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  await expect(page.locator('[data-favorite="5741"]')).toHaveAttribute('aria-pressed','true');
   await page.getByLabel('Active only').check(); await expect(page.locator('[data-route="5741"]')).toHaveCount(0);
+});
+
+test('a favorite moves between active and inactive groups as live service changes',async({page})=>{
+  const {data}=await mockTransit(page,{cityRoute:true});await page.clock.install();await page.goto('/');
+  const favorite=data.ugaRoutes.find(route=>route.id===5741)!;
+  await page.locator('[data-favorite="5741"]').click();
+  await expect(page.locator('.route-card').last().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  favorite.active=true;await page.clock.fastForward(61000);
+  await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  favorite.active=false;await page.clock.fastForward(61000);
+  await expect(page.locator('.route-card').last().locator('[data-route]')).toHaveAttribute('data-route','5741');
+  await expect(page.locator('[data-favorite="5741"]')).toHaveAttribute('aria-pressed','true');
 });
 
 test('notes collapse below the map with compact fragments and optional original text', async ({ page }) => {
