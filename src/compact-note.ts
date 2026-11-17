@@ -16,14 +16,11 @@ export function compactNote(raw: string, serviceAlert = false): string {
   if ((match = text.match(/^Current stops unavailable for (.+?); verified static stop order/i))) return `${match[1]} · static stops · estimated timing`;
   if ((match = text.match(/^Ordered stops? (?:data )?unavailable for (.+?)[;.]/i))) return `${match[1]} · no stop order · excluded`;
   if (/published routes without current-service evidence/i.test(text)) return 'Service unconfirmed · excluded';
-  if ((match = text.match(/^(\d+) route directions? outside the Athens area/i))) return `${match[1]} directions outside Athens · excluded`;
   if ((match = text.match(/^Predictions unavailable at (\d+) stops/i))) return `${match[1]} stops · no ETA · estimated waits`;
   if (/older than two minutes|older than 2 minutes/i.test(text)) return 'GPS >2 min / time unknown';
   if (/vehicle.*(?:clock time without an absolute update date|update dates are unavailable)/i.test(text)) return 'GPS time unknown';
   if (/^Road trace unavailable/i.test(text)) return 'Trace missing · dashed stop connectors';
   if ((match = text.match(/Transit request failed\s*\((\d{3})\)/i))) return `HTTP ${match[1]} · retry${/last received/i.test(text) ? ' · last positions' : ''}`;
-  if (/^Athens lock is on\./i.test(text)) return 'Athens only · choose local point / unlock Athens';
-  if (/^Your location is outside Athens/i.test(text)) return 'Outside Athens · pick local start / unlock Athens';
   if (/^Location permission was denied/i.test(text)) return 'Location denied · search / pick start';
   if (/^Choose a start and destination from the suggestions/i.test(text)) return 'Select start + destination · suggestions / map / coordinates';
   if (/^The planner loads the full directed route topology/i.test(text)) return 'Live ETA/GPS · fallback wait 7.5 min · estimates, no timetable guarantee';

@@ -1,6 +1,6 @@
 import './style.css';
 import { UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from './api';
-import { createTransitService, knownStops, ATHENS_INFO_AGENCY, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
+import { createTransitService, knownStops, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
 import { planJourney, parseCoordinate, type Journey } from './planner';
 import { TransitMap } from './map';
 import { renderNotes, compactNote } from './notes';
@@ -8,13 +8,12 @@ import { Favorites } from './favorites';
 import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-presentation';
 import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
 import { PlaceInput, PlaceSearch } from './places';
-import { inAthens, isAthensAgency, vehiclesInScope, networkInScope } from './athens';
-import { readPreferences, savePreference, THEME_KEY, ATHENS_LOCK_KEY } from './preferences';
+import { readPreferences, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
 import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
 import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehicleAge, headingLabel } from './ui';
 
 const preferences = readPreferences();
-let athensLocked = preferences.athensLocked;
+let routeLocked = preferences.routeLocked;
 document.documentElement.dataset.theme = preferences.theme;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const center = { lat: 33.948, lon: -83.377 };
@@ -51,7 +50,7 @@ app.innerHTML = `
   <a href="#main" class="skip-link">Skip to content</a>
   <header class="header"><div class="header-inner">
     <button class="brand" id="home" aria-label="tranuga home"><span class="brand-mark" aria-hidden="true">↳</span>tranuga<span class="brand-period">.</span></button>
-    <nav aria-label="Main navigation"><button data-nav="routes">Routes</button><button data-nav="plan">Plan a trip <span aria-hidden="true">↗</span></button><button data-nav="agencies">Networks</button><div class="menu-preferences"><button id="theme-toggle" class="menu-toggle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 15A8 8 0 0 1 9 4a8 8 0 1 0 11 11Z"/></svg>Dark mode<span class="menu-value"></span></button><button id="athens-toggle" class="menu-toggle" aria-pressed="true" title="Keep networks, buses and maps in Athens, Georgia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Athens lock<span class="menu-value"></span></button></div></nav>
+    <nav aria-label="Main navigation"><button data-nav="routes">Routes</button><button data-nav="plan">Plan a trip <span aria-hidden="true">↗</span></button><button data-nav="agencies">Networks</button><div class="menu-preferences"><button id="theme-toggle" class="menu-toggle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 15A8 8 0 0 1 9 4a8 8 0 1 0 11 11Z"/></svg>Dark mode<span class="menu-value"></span></button><button id="route-lock-toggle" class="menu-toggle" aria-pressed="true" title="Keep the selected route in view while zooming and panning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Route lock<span class="menu-value"></span></button></div></nav>
     <div class="place"><span class="status-dot"></span><span id="agency-name">${e(agency.name)}</span></div>
   </div></header>
   <aside class="source-bar" aria-label="Data reliability"><details id="data-sources"><summary id="source-summary">Checking transit sources…</summary><div id="source-status"></div><div class="source-actions"><button class="button" id="sync-data">Sync all sources</button><button class="button" id="provider-info">Provider information</button></div><p class="help-text">Matching reports take precedence. One healthy source can serve as backup. Replicas may share an upstream; agreement does not guarantee accuracy.</p><div id="sync-status" role="status"></div><div id="provider-details"></div></details></aside>
@@ -80,7 +79,7 @@ function setView(next: typeof view) {
 }
 function renderPreferences() {
   const dark = document.documentElement.dataset.theme === 'dark';
-  for (const [id, enabled] of [['#theme-toggle', dark], ['#athens-toggle', athensLocked]] as const) {
+  for (const [id, enabled] of [['#theme-toggle', dark], ['#route-lock-toggle', routeLocked]] as const) {
     const button = $<HTMLButtonElement>(id); button.setAttribute('aria-pressed', String(enabled));
     button.querySelector('.menu-value')!.textContent = enabled ? 'On' : 'Off';
   }
@@ -90,22 +89,12 @@ $('#theme-toggle').onclick = () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = theme; savePreference(THEME_KEY, theme); renderPreferences();
 };
-$('#athens-toggle').onclick = async () => {
-  athensLocked = !athensLocked; savePreference(ATHENS_LOCK_KEY, String(athensLocked)); renderPreferences();
-  announce(athensLocked ? 'Athens lock on. Showing Athens, Georgia only.' : 'Athens lock off. Other networks and unrestricted maps are available.');
-  if (athensLocked && !isAthensAgency(agency)) { await selectAgency(GEORGIA_AGENCY); return; }
-  if (athensLocked) {
-    if (!origin || !inAthens(origin)) { origin = undefined; originLabel = ''; }
-    if (!destination || !inAthens(destination)) { destination = undefined; destinationLabel = ''; }
-  }
-  if (view === 'plan') showPlanner('none');
-  else if (view === 'agencies') await showAgencies('none');
-  else if (view === 'detail' && detail) await showRoute(detail.route.id, 'none');
-  else await showRoutes(false, 'none');
+$('#route-lock-toggle').onclick = () => {
+  routeLocked = !routeLocked; savePreference(ROUTE_LOCK_KEY, String(routeLocked)); renderPreferences();
+  map?.setRouteLocked(routeLocked);
+  announce(routeLocked ? 'Route lock on. Map navigation follows the selected route.' : 'Route lock off. Map navigation is unrestricted.');
 };
 renderPreferences();
-function pointAllowed(point: Coordinate) { return !athensLocked || inAthens(point); }
-function localPointError() { return warning(['Athens lock is on. Choose a point in Athens, Georgia, or turn off Athens lock in the main menu.'], 'action'); }
 function focusTitle() { main.querySelector<HTMLElement>('h1')?.focus({ preventScroll: true }); }
 function writeNotes(selector: string, html: string) {
   const target=$(selector), wasOpen=!!target.querySelector('.notes-dropdown[open]');
@@ -128,7 +117,7 @@ function renderReplication() {
 $('#sync-data').onclick = async () => {
   const current = service; const button = $<HTMLButtonElement>('#sync-data'); button.disabled = true;
   $('#sync-status').textContent = 'Crawling configured feeds, stops and predictions…';
-  try { const raw = await current.sync(); if (service !== current) return; const result = networkInScope(raw, athensLocked); if (view === 'routes') { routes = result.routes; renderRouteCards(); } $('#sync-status').textContent = `Merged ${result.routes.length} routes, ${result.stops.length} stops and ${result.vehicles.length} reported buses. ${result.warnings.join(' ')}`; }
+  try { const raw = await current.sync(); if (service !== current) return; const result = raw; if (view === 'routes') { routes = result.routes; renderRouteCards(); } $('#sync-status').textContent = `Merged ${result.routes.length} routes, ${result.stops.length} stops and ${result.vehicles.length} reported buses. ${result.warnings.join(' ')}`; }
   catch (error) { if (service === current) $('#sync-status').textContent = errorMessage(error); }
   finally { if (service === current) { button.disabled = false; renderReplication(); } }
 };
@@ -214,7 +203,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
     // Reconcile the entire fleet before filtering so old route assignments cannot leave ghost buses.
     const live = service.refreshVehicles(true).catch(() => undefined);
     const [raw, vehicles] = await Promise.all([service.getRoute(routeId), live]);
-    const result = { ...raw, vehicles: vehiclesInScope(uniqueVehicles(vehicles ?? raw.vehicles).filter(bus => bus.routeId === routeId), athensLocked) };
+    const result = { ...raw, vehicles: uniqueVehicles(vehicles ?? raw.vehicles).filter(bus => bus.routeId === routeId) };
     if (token !== operation) return;
     detail = result;
     $('#route-detail').className = '';
@@ -223,7 +212,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
       <aside class="stop-panel"><div class="panel-heading"><h2>Along the way</h2><label class="sr-only" for="route-direction">Route direction</label><select id="route-direction"><option value="">All directions</option>${result.patterns.map(pattern => `<option value="${e(pattern.id)}">${e(pattern.direction)}</option>`).join('')}</select></div><div id="stop-detail" aria-live="polite"></div><div id="route-stops"></div></aside></div>
       <div class="route-notes"><div id="service-messages">${warning(result.messages, 'service')}</div><div id="route-warnings">${warning(result.warnings)}</div></div>
       <div class="vehicles-section"><h2>On the road</h2><p class="muted">Positions refresh every 15 seconds. Arrows show the reported heading.</p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
-    map = new TransitMap($('#route-map'), agency.center || center, undefined, athensLocked);
+    map = new TransitMap($('#route-map'), agency.center || center, undefined, routeLocked);
     map.showRoute(result, stop => void showStop(stop));
     $<HTMLSelectElement>('#route-direction').onchange = event => {
       selectedDirection = (event.target as HTMLSelectElement).value;
@@ -234,7 +223,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
     renderReplication();
     document.querySelector<HTMLFormElement>('#bus-search')?.addEventListener('submit', async event => {
       event.preventDefault(); const query = $<HTMLInputElement>('#bus-query').value.trim(); $('#bus-search-result').textContent = 'Looking up that bus…';
-      try { const buses = vehiclesInScope(await service.searchBuses(query), athensLocked); if (token !== operation || $<HTMLInputElement>('#bus-query').value.trim() !== query) return; $('#bus-search-result').innerHTML = buses.map(bus => `<p>Bus ${e(bus.id)} · ${e(routes.find(route => route.id === bus.routeId)?.name || bus.routeId)} · ${e(headingLabel(bus.heading))} · ${e(vehicleAge(bus.updatedAt))}</p>`).join('') || '<p>No matching bus is reported by the provider.</p>'; }
+      try { const buses = await service.searchBuses(query); if (token !== operation || $<HTMLInputElement>('#bus-query').value.trim() !== query) return; $('#bus-search-result').innerHTML = buses.map(bus => `<p>Bus ${e(bus.id)} · ${e(routes.find(route => route.id === bus.routeId)?.name || bus.routeId)} · ${e(headingLabel(bus.heading))} · ${e(vehicleAge(bus.updatedAt))}</p>`).join('') || '<p>No matching bus is reported by the provider.</p>'; }
       catch (error) { if (token === operation) $('#bus-search-result').textContent = errorMessage(error); }
       finally { if (token === operation) renderReplication(); }
     });
@@ -247,7 +236,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
 
 function renderStops() {
   if (!detail) return;
-  const stops = (selectedDirection ? detail.patterns.find(pattern => pattern.id === selectedDirection)?.stops || [] : detail.stops).filter(pointAllowed);
+  const stops = (selectedDirection ? detail.patterns.find(pattern => pattern.id === selectedDirection)?.stops || [] : detail.stops);
   $('#route-stops').innerHTML = `<p class="stop-count">${stops.length} stops · select one for arrivals</p><ol class="stop-list">${stops.map((stop, index) => `<li><button data-stop="${e(stop.id)}"><span class="stop-sequence">${index + 1}</span><span>${e(stop.name)}</span><span aria-hidden="true">↗</span></button></li>`).join('')}</ol>`;
   document.querySelectorAll<HTMLButtonElement>('[data-stop]').forEach(button => button.onclick = () => {
     const stop = stops.find(s => s.id === button.dataset.stop); if (stop) void showStop(stop);
@@ -262,7 +251,6 @@ async function showStop(stop: Stop) {
   try {
     const result = await service.getStop(stop.id);
     if (token !== operation || stopToken !== stopOperation || view !== 'detail') return;
-    if (!pointAllowed(result.stop)) throw new Error('This stop is outside Athens. Turn off Athens lock to explore it.');
     selectedStop = result;
     $('#stop-detail').innerHTML = `<div class="stop-arrivals"><div class="eyebrow">STOP ${e(stop.id)}</div><h3>${e(result.stop.name || stop.name)}</h3>${result.departures.filter(d => d.arrivalTime >= Date.now() - 30000).sort((a, b) => a.arrivalTime - b.arrivalTime).slice(0, 10).map(dep => `<div class="arrival-row"><span>${e(routes.find(r => r.id === dep.routeId)?.shortName || dep.routeId)} ${e(dep.direction || '')}</span><strong>${arrivalLabel(dep.arrivalTime)}</strong><small>${dep.scheduled ? 'Scheduled' : 'Predicted'} · ${clockTime(dep.arrivalTime)}</small></div>`).join('') || '<p>No upcoming predictions are available for this stop.</p>'}<button class="text-button" id="stop-as-origin">Start a trip here ↗</button>${service.hasPassioFor(detail?.route.id, stop.id) ? '<br><button class="text-button" id="show-timetable">Provider timetable</button><div id="stop-timetable"></div>' : ''}</div>`;
     $('#stop-as-origin').onclick = () => { origin = selectedStop!.stop; originLabel = selectedStop!.stop.name; showPlanner(); };
@@ -291,7 +279,7 @@ function pointField(kind: 'origin' | 'destination', label: string, value: string
 function showPlanner(historyMode: HistoryMode = 'push') {
   setPath('/plan', historyMode);
   setView('plan'); pickMode = undefined; planning = false;
-  main.innerHTML = `<section class="container planner-page"><div class="eyebrow">MAKE A CONNECTION</div><div class="page-heading"><div><h1 tabindex="-1">Your way from A to B<span>.</span></h1><p>${athensLocked ? 'Search places or stops in Athens, Georgia.' : 'Search places or stops.'} We’ll compare the available bus connections.</p></div></div>
+  main.innerHTML = `<section class="container planner-page"><div class="eyebrow">MAKE A CONNECTION</div><div class="page-heading"><div><h1 tabindex="-1">Your way from A to B<span>.</span></h1><p>Search places or stops. We’ll compare the available bus connections.</p></div></div>
     <div class="planner-layout"><aside class="trip-panel"><form id="trip-form"><fieldset id="trip-fields">
       ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button">⌖ My location</button></div>
       ${pointField('destination', 'Destination', destinationLabel || (destination ? coordinates(destination) : ''))}<div class="field-actions"><button type="button" id="pick-destination" class="text-button">⊕ Pick on map</button><button type="button" id="swap" class="text-button">⇅ Swap</button></div>
@@ -299,7 +287,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       <button class="button primary full" type="submit" id="find-trip"><span class="calculation-label">Find quickest bus trip</span> <span aria-hidden="true">↗</span></button><div id="trip-progress" class="calculation-progress" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden><span></span></div>
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
-      <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">${athensLocked ? 'Choose a start and destination in Athens, Georgia.' : 'Choose a start and destination to get going.'}</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
+      <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
       <div class="planning-note">${warning(['The planner loads the full directed route topology, connects lines at shared or nearby stops, and ranks usable service with current ETAs and recent bus positions. Missing live timing uses a 7.5-minute wait and estimated bus travel. Trips are estimates, not a timetable guarantee.'], 'estimate')}</div></section>`;
   map = new TransitMap($('#trip-map'), agency.center || center, point => {
     if (!pickMode || planning) return;
@@ -309,7 +297,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
     pickMode = undefined; $('#map-instruction').textContent = 'Point selected. Choose the other point or find your trip.';
     resetTripResult();
     map?.showPoints(origin, destination);
-  }, athensLocked);
+  }, routeLocked);
   map.showPoints(origin, destination);
   void refreshLiveVehicles(true);
   const token = operation, current = service;
@@ -323,7 +311,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       const point = place || parseCoordinate(text) || undefined;
       if (kind === 'origin') { origin = point; originLabel = text; } else { destination = point; destinationLabel = text; }
       pickMode = undefined; resetTripResult(); map?.showPoints(origin, destination);
-    }, pointAllowed);
+    });
   }
   $('#pick-origin').onclick = () => choosePoint('origin');
   $('#pick-destination').onclick = () => choosePoint('destination');
@@ -339,7 +327,6 @@ function showPlanner(historyMode: HistoryMode = 'push') {
     const token = operation; const revision = ++comparisonRevision;
     const from = origin, to = destination;
     if (!from || !to) { $('#operator-result').textContent = 'Choose start and destination suggestions or use the map first.'; return; }
-    if (!pointAllowed(from) || !pointAllowed(to)) { $('#operator-result').innerHTML = localPointError(); return; }
     const button = $<HTMLButtonElement>('#compare-provider'); button.disabled = true; $('#operator-result').textContent = 'Requesting operator suggestions…';
     try { const comparison = await service.compareJourney(from, to); if (token !== operation || revision !== comparisonRevision) return; $('#operator-result').innerHTML = comparison.routes.map(route => `<article><h3>${e(route.label)}</h3><p>${route.durationSeconds !== undefined ? `${Math.ceil(route.durationSeconds / 60)} min` : 'Duration unavailable'}${route.transfers !== undefined ? ` · ${route.transfers} transfers` : ''}</p><ol>${route.legs.map(leg => `<li>${e(leg.mode === 'ride' ? leg.routeName || 'Bus' : 'Walk')}${leg.fromStopName ? ` · ${e(leg.fromStopName)} → ${e(leg.toStopName || '')}` : ''}</li>`).join('')}</ol></article>`).join('') || '<p>The provider returned no transit suggestion for these points.</p>'; $('#operator-result').innerHTML += warning(comparison.warnings); }
     catch (error) { if (token === operation && revision === comparisonRevision) $('#operator-result').textContent = errorMessage(error); }
@@ -370,7 +357,6 @@ async function locateUser() {
   $('#trip-status').textContent = 'Finding your location…';
   try {
     const point = await geolocate(); if (token !== operation) return;
-    if (!pointAllowed(point)) throw new Error('Your location is outside Athens, Georgia. Pick a local start or turn off Athens lock in the main menu.');
     origin = point; originLabel = 'Current location'; pointInputs.origin?.setValue(originLabel);
     resetTripResult();
     map?.showPoints(origin, destination); map?.focus(point);
@@ -383,7 +369,6 @@ async function findTrip() {
   if (planning) return;
   const from = origin, to = destination;
   if (!from || !to) { $('#trip-status').innerHTML = warning(['Choose a start and destination from the suggestions, or use the map. Valid decimal coordinates also work.'], 'action'); return; }
-  if (!pointAllowed(from) || !pointAllowed(to)) { $('#trip-status').innerHTML = localPointError(); return; }
   displayedJourney = undefined; map?.clearJourney(); origin = from; destination = to; map?.showPoints(origin, destination);
   const token = operation; planning = true; pickMode = undefined;
   const fields = $<HTMLFieldSetElement>('#trip-fields'); fields.disabled = true; setRouteLoading(true);
@@ -391,7 +376,7 @@ async function findTrip() {
   $('#trip-result').innerHTML = ''; $('#trip-status').textContent = 'Comparing available routes, arrivals and transfers…';
   try {
     // Refresh the network for each search so old predictions are not reused as current.
-    const currentNetwork = networkInScope(await service.getNetwork(), athensLocked); network = currentNetwork;
+    const currentNetwork = await service.getNetwork(); network = currentNetwork;
     if (token !== operation) return;
     const result = planJourney(currentNetwork, from, to, { now: Date.now(), maxWalkMeters: Number($<HTMLSelectElement>('#max-walk').value) });
     $('#trip-status').innerHTML = ''; $('#trip-notes').innerHTML = warning(currentNetwork.messages, 'service') + warning(currentNetwork.warnings);
@@ -416,30 +401,24 @@ async function findTrip() {
 async function showAgencies(historyMode: HistoryMode = 'push') {
   setPath('/networks', historyMode);
   setView('agencies'); const token = operation; const revision = ++agencyRevision;
-  main.innerHTML = `<section class="container networks-page"><div class="eyebrow">BEYOND CAMPUS</div><div class="page-heading"><div><h1 tabindex="-1">Find your network<span>.</span></h1><p>${athensLocked ? 'Athens lock is on. Choose a local network below.' : 'Start with UGA or explore an agency connected to myStop / InfoPoint.'}</p></div></div>
+  main.innerHTML = `<section class="container networks-page"><div class="eyebrow">BEYOND CAMPUS</div><div class="page-heading"><div><h1 tabindex="-1">Find your network<span>.</span></h1><p>Start with UGA or explore an agency connected to myStop / InfoPoint.</p></div></div>
     <button class="network-home" id="select-uga"><span class="route-badge">UGA</span><span><strong>University of Georgia</strong><small>Athens, Georgia · Default network</small></span><span aria-hidden="true">↗</span></button>
     <div class="network-presets"><button class="network-home" id="select-ohio"><span class="route-badge">OH</span><span><strong>Athens Public Transit</strong><small>Athens, Ohio · Passio · Three backend replicas</small></span><span aria-hidden="true">↗</span></button><button class="network-home" id="select-passio-uga"><span class="route-badge">GA</span><span><strong>UGA on Passio</strong><small>Campus only · Three backend replicas</small></span><span aria-hidden="true">↗</span></button></div>
     <div class="network-tools"><label class="search"><span aria-hidden="true">⌕</span><input id="agency-search" placeholder="Search agencies" aria-label="Search agencies"></label><button class="button" id="nearby-agencies">⌖ Find nearby</button><form id="code-form"><label class="sr-only" for="agency-code">Authority code</label><input id="agency-code" placeholder="Authority code" required maxlength="50"><button class="button" type="submit">Find by code</button></form></div>
     <div id="agency-status" role="status">Loading the authority directory…</div><div id="agencies" class="agency-grid"></div>
     <p class="help-text">Agency support and data quality vary. Discovery comes from the operator’s original HTTP directory through our gateway. Newly added agency hosts need gateway approval before use.</p></section>`;
   $('#select-uga').onclick = () => void selectAgency(UGA_AGENCY);
-  $<HTMLButtonElement>('#select-ohio').hidden = athensLocked;
-  $('.network-tools').hidden = athensLocked;
   $('#select-ohio').onclick = () => void selectAgency(PASSIO_ATHENS_AGENCY);
   $('#select-passio-uga').onclick = () => void selectAgency(PASSIO_UGA_AGENCY);
   $('#agency-search').oninput = renderAgencies;
   $('#nearby-agencies').onclick = () => void searchAgencies('nearby');
   $<HTMLFormElement>('#code-form').onsubmit = event => { event.preventDefault(); void searchAgencies('code'); };
   focusTitle();
-  if (athensLocked) {
-    agencyChoices = [ATHENS_INFO_AGENCY]; $('#agency-status').textContent = 'Athens lock is on · Athens, Georgia networks only. Turn it off in the main menu to explore elsewhere.'; renderAgencies(); return;
-  }
   try { const result = await discoverAgencies(); if (token !== operation || revision !== agencyRevision) return; agencyChoices = result; $('#agency-status').textContent = `${result.length} agencies in the directory`; renderAgencies(); }
   catch (error) { if (token === operation && revision === agencyRevision) $('#agency-status').innerHTML = `${warning([errorMessage(error)], 'error')}<button id="retry-agencies" class="button">Retry directory</button>`; document.querySelector<HTMLButtonElement>('#retry-agencies')?.addEventListener('click', () => void showAgencies()); }
 }
 
 async function searchAgencies(kind: 'nearby' | 'code') {
-  if (athensLocked) return;
   const token = operation; const revision = ++agencyRevision;
   $('#agency-status').textContent = kind === 'nearby' ? 'Finding agencies near you…' : 'Looking up authority code…';
   try {
@@ -452,12 +431,11 @@ async function searchAgencies(kind: 'nearby' | 'code') {
 
 function renderAgencies() {
   const query = $<HTMLInputElement>('#agency-search').value.toLowerCase();
-  $('#agencies').innerHTML = agencyChoices.filter(item => (!athensLocked || isAthensAgency(item)) && item.name.toLowerCase().includes(query)).map(item => `<button class="agency-card" data-agency="${e(item.id)}"><strong>${e(item.name)}</strong><span>Explore routes ↗</span></button>`).join('') || '<p class="empty">No agencies found.</p>';
+  $('#agencies').innerHTML = agencyChoices.filter(item => item.name.toLowerCase().includes(query)).map(item => `<button class="agency-card" data-agency="${e(item.id)}"><strong>${e(item.name)}</strong><span>Explore routes ↗</span></button>`).join('') || '<p class="empty">No agencies found.</p>';
   document.querySelectorAll<HTMLButtonElement>('[data-agency]').forEach(button => button.onclick = () => { const choice = agencyChoices.find(item => item.id === button.dataset.agency); if (choice) void selectAgency(choice); });
 }
 
 async function selectAgency(choice: Agency) {
-  if (athensLocked && !isAthensAgency(choice)) { announce('Turn off Athens lock in the main menu to explore other networks.'); return; }
   agency = choice.kind === 'uga' ? GEORGIA_AGENCY : choice; service = createTransitService(agency); routes = []; network = undefined; detail = undefined; origin = undefined; destination = undefined; originLabel = ''; destinationLabel = '';
   $('#agency-name').textContent = agency.name;
   $('#sync-status').textContent = ''; $('#provider-details').textContent = ''; $<HTMLButtonElement>('#sync-data').disabled = false; renderReplication();
@@ -468,7 +446,7 @@ async function refreshLiveVehicles(initial = false) {
   if (document.hidden || pollingOperation === operation || !(view==='detail' && detail || view==='plan' && (initial || displayedJourney && network))) return;
   const token=operation; pollingOperation=token;
   try {
-    const vehicles=vehiclesInScope(uniqueVehicles(await service.refreshVehicles(initial)),athensLocked);
+    const vehicles=uniqueVehicles(await service.refreshVehicles(initial));
     if (token!==operation) return;
     if (view==='detail' && detail) {
       detail.vehicles=vehicles.filter(bus=>bus.routeId===detail!.route.id);

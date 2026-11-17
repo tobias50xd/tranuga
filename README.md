@@ -4,12 +4,12 @@ A static bus explorer and quickest-trip estimator, deployed with GitHub Actions 
 
 ## Use the app
 
-- **Main menu:** switch **Dark mode** on/off and use **Athens lock**, which is on by default. Both settings are remembered on this device.
+- **Main menu:** switch **Dark mode** on/off and use **Route lock**, which is on by default. Both settings are remembered on this device.
 - **Routes:** star bus-line cards to pin favorites first, followed by all active routes, then inactive/unconfirmed routes. UGA has priority over city buses within each activity group. Active service has a light tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
 - **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Calculation shows an indeterminate loading bar. The result map draws only the ridden portions of the selected lines, marks transfer stops with a purple ↔ symbol, and refreshes their bus markers. Notes stay collapsed below the map.
 - **Data reliability:** inspect responding sources, disagreements and saved-backup state. **Sync all sources** crawls the selected network's full route/stop/prediction data. One responding source can still provide a labeled catalog/topology fallback, but a bus location from a three-node Passio network is displayed only after at least two replicas agree. A current Passio point supersedes an outdated duplicate for the same bus.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
-- **Networks:** Athens lock offers the combined Georgia network, UGA's Passio network and Athens-Clarke County InfoPoint. Turn the lock off to use Athens Public Transit in Ohio or another reviewed InfoPoint agency, search the directory, locate a nearby agency, or enter an authority code.
+- **Networks:** choose the combined Georgia network, UGA Passio, Athens Public Transit in Ohio or a reviewed InfoPoint agency. Search the directory, locate a nearby agency or enter an authority code. Route lock follows the displayed route in any network.
 
 All clock times use the device timezone except provider timetable clock labels, which retain the operator's stated IANA timezone. Missing dates, route identities and durations remain unknown rather than being invented.
 
@@ -25,23 +25,21 @@ An active city route therefore precedes an inactive UGA route, while any favorit
 
 Operator labels use explicit UGA `isAthensBus`/selected-provider metadata, with reviewed aliases for older snapshots. Favorites are scoped by network kind, agency ID and native/canonical route ID, so equal IDs in Ohio and Georgia remain distinct. They are saved locally under `tranuga.favorites.v1`, capped at 500 entries. Blocked/full storage keeps session favorites usable; malformed saved entries are ignored. No account or location is needed. See [favorites.ts](src/favorites.ts) and [route-presentation.ts](src/route-presentation.ts).
 
-### Dark mode and Athens lock
+### Dark mode and route lock
 
 Both buttons are in the main navigation on desktop and mobile and expose their on/off state with `aria-pressed`.
 
 **Dark mode** changes the complete app palette: route/service cards, notes, forms, address hints, journey results, footer and map controls/popups. Leaflet/OpenStreetMap stays in use; a local CSS filter darkens only the map tile layer while preserving route and bus colors and the map attribution. On the first visit, the app follows the device's light/dark preference. An explicit choice is saved under `tranuga.theme.v1` (`light` or `dark`) and applied before the app renders through [public/theme.js](public/theme.js). Switching the palette preserves the current view and selected trip points.
 
-**Athens lock starts on** and scopes the app to **Athens, Georgia / UGA / Athens-Clarke County**:
+**Route lock starts on** and keeps navigation relative to the displayed route:
 
-- Network choices include only combined UGA/Athens, UGA Passio `3994`, and Athens InfoPoint authority `58`. The global directory, nearby/code lookup and Ohio network are available after unlocking. The lock also guards network selection in code.
-- Bus markers, vehicle lists/counts, polling, bus-search results, sync summaries and planner vehicle data exclude positions outside the configured Athens area. Original positions and observation times are preserved.
-- Stop/address suggestions and map picks stay inside the same area. Typed coordinates and **My location** outside it receive an explanation before trip planning or provider comparison is requested. Enabling the lock clears foreign trip points; enabling it while another city's network is selected returns to the default Georgia network.
-- The planner keeps complete directed stop patterns inside the area. A pattern containing an outside stop is excluded with a note, preserving stop order and transfer correctness.
-- Every route/planner map limits panning to the Athens area. Its minimum zoom is calculated from the actual viewport using Leaflet's [bounds/zoom controls](https://leafletjs.com/reference-1.9.4.html#map-getboundszoom), so the furthest overview shows the whole area without allowing further zoom-out. The limit updates when the viewport changes; zooming in remains available. Turning the lock off restores other networks and unrestricted map navigation.
+- Zooming out stops at the overview that fits the whole selected route with 24 px of padding. The limit uses the actual map viewport and updates after resizing. Zooming in to individual stops remains available.
+- You can pan in every direction. At the overview, at least **50% of the route's horizontal and vertical extent** remains visible. At closer zoom levels, the overlap is half of the smaller of the route's extent and the viewport in each direction. These limits use the route's projected bounding rectangle, not a count of stops or percentage of polyline length.
+- A route detail uses its displayed geometry and stops; selecting a direction updates the bounds. A calculated trip uses only its displayed ride segments, walking connections and transfer stops. Unused lines and distant bus positions do not widen the overview.
+- Before a trip has been calculated, the planner map is free to explore and pick points. Editing a trip clears its previous bounds until a new trip is drawn. Missing route geometry also leaves navigation free.
+- Switching the lock on/off updates the existing map without refetching data or clearing the selected network, trip points, result or bus markers. Turning it off restores unrestricted panning and zooming out. All network choices, address hints and provider data remain available with either setting.
 
-[athens.ts](src/athens.ts) defines one shared service-area rectangle: **33.86°–34.10° latitude, −83.54°–−83.24° longitude**. It covers all 608 reviewed local stops and is the common boundary for bus/point filtering and map limits. The setting controls the client interface and planner; the gateway retains its documented read-query allowlist for unlocked use. This is an app service-area rectangle rather than a parcel-level boundary dataset.
-
-The lock choice is saved under `tranuga.athens-lock.v1` (`true`/`false`); a new or invalid preference defaults to locked. Preferences contain no coordinates. If storage is unavailable, both controls still work for the current visit. Routes and settings can be changed independently; replication rules and API credentials are unaffected.
+The choice is saved under `tranuga.route-lock.v1` (`true`/`false`); a new or invalid preference defaults to locked. If the new key is absent, an existing `tranuga.athens-lock.v1` on/off choice supplies the initial value. Preferences contain no coordinates. If storage is unavailable, both menu controls still work for the current visit.
 
 ### Application URLs
 
@@ -381,7 +379,7 @@ npx wrangler deploy --dry-run --outdir /tmp/tranuga-worker
 | [planner.test.ts](tests/planner.test.ts) | Directed journeys, loops, transfers, ETA/EDT, arbitrary/geolocation coordinates, stale/unreachable cases and independent oracle. |
 | [worker.test.ts](tests/worker.test.ts) | Approved GET/POST contracts, payload limits, system separation, origin/method validation, proxy/caching failures and comparison privacy. |
 | [journey-map.test.ts](tests/journey-map.test.ts), [vehicle-motion.test.ts](tests/vehicle-motion.test.ts), [favorites.test.ts](tests/favorites.test.ts) | Partial/loop/multipart geometry, transfer identity, bounded interpolation/snap rules, favorite persistence and ordering. |
-| [preferences.test.ts](tests/preferences.test.ts) | Preference defaults/restore/storage failure, local network eligibility, all reviewed stops in bounds, foreign-bus filtering and complete-pattern exclusion. |
+| [preferences.test.ts](tests/preferences.test.ts), [route-viewport.test.ts](tests/route-viewport.test.ts) | Theme/route-lock defaults, legacy preference migration, blocked storage and half-overlap pan limits for wide, narrow and degenerate route bounds. |
 | [ui.test.ts](tests/ui.test.ts), [presentation.test.ts](tests/presentation.test.ts), [browser tests](tests/e2e/app.spec.ts) | Rendering helpers, service ordering, note classes, place normalization/cache/privacy and desktop/mobile workflows, selection/race guards and failures. |
 
 Provider probes are opt-in:
@@ -391,15 +389,16 @@ LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
 LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
 ```
 
-The latest November 13 acceptance run passed **417 deterministic tests and 78 browser tests**, plus TypeScript, production build and Wrangler dry run. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures. Do not infer a new final test count from older dated runs.
+The November 17 route-lock checks passed **449 deterministic tests and 94 browser tests**, plus TypeScript and the production build. Nine opt-in live cases were skipped. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures.
 
 ## Source map and maintenance
 
 ```text
 src/main.ts                 UI, source status, network/provider tools and polling
-src/map.ts                  Leaflet layers and responsive Athens map bounds
-src/athens.ts               Shared Athens service area and data filtering
-src/preferences.ts          Theme/area preference defaults and storage
+src/map.ts                  Leaflet layers and responsive route-relative map bounds
+src/route-viewport.ts       Half-overlap pan limits for route and viewport extents
+src/athens.ts               Geographic sampling bounds for the Georgia trip monitor
+src/preferences.ts          Theme/route-lock defaults, migration and storage
 public/theme.js             Early saved/system palette before app rendering
 src/places.ts               Stop/address autocomplete and private query transport
 src/notes.ts                Readable note classes, icons and source details

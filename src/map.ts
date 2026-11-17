@@ -3,7 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import type { Coordinate, Network, RouteDetail, Stop, Vehicle } from './types';
 import type { Journey } from './planner';
 import { escapeHtml as e, safeColor, vehicleAge, headingLabel } from './ui';
-import { ATHENS_BOUNDS, inAthens } from './athens';
+import { routeViewportBounds } from './route-viewport';
 import { rideGeometry, journeyTransfers } from './journey-map';
 import { VehicleMotion } from './vehicle-motion';
 import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
@@ -16,17 +16,19 @@ export class TransitMap {
   private vehicles = L.featureGroup();
   private journey = L.featureGroup();
   private points = L.layerGroup();
-  private athensLocked: boolean;
+  private routeLocked: boolean;
+  private routeBounds?: L.LatLngBounds;
+  private applyingLock = false;
   private busMarkers = new Map<string, BusMarker>();
   private frame?: number;
   private lifetime = new AbortController();
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-  constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void, athensLocked = false) {
-    this.athensLocked = athensLocked;
+  constructor(element: HTMLElement, center: Coordinate, onPick?: (point: Coordinate) => void, routeLocked = false) {
+    this.routeLocked = routeLocked;
     // Leaflet 1.9 queues zoom callbacks that can outlive a removed map. Use immediate
     // zooms so navigation can safely destroy a map in the same animation frame.
-    this.map = L.map(element, { zoomControl: false, zoomAnimation: false, fadeAnimation: false, zoomSnap: .25, maxBoundsViscosity: 1, bounceAtZoomLimits: !athensLocked }).setView([center.lat, center.lon], 14);
+    this.map = L.map(element, { zoomControl: false, zoomAnimation: false, fadeAnimation: false, zoomSnap: .25, maxBoundsViscosity: 1, bounceAtZoomLimits: false }).setView([center.lat, center.lon], 14);
     L.control.zoom({ position: 'bottomright' }).addTo(this.map);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -34,21 +36,38 @@ export class TransitMap {
     }).addTo(this.map);
     this.routes.addTo(this.map); this.stops.addTo(this.map); this.vehicles.addTo(this.map);
     this.journey.addTo(this.map); this.points.addTo(this.map);
-    this.map.on('click', event => { const point = { lat: event.latlng.wrap().lat, lon: event.latlng.wrap().lng }; if (!this.athensLocked || inAthens(point)) onPick?.(point); });
+    this.map.on('click', event => { onPick?.({ lat: event.latlng.wrap().lat, lon: event.latlng.wrap().lng }); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.finishMotion(); }, { signal:this.lifetime.signal });
-    if (this.athensLocked) {
-      const bounds = L.latLngBounds([ATHENS_BOUNDS.south, ATHENS_BOUNDS.west], [ATHENS_BOUNDS.north, ATHENS_BOUNDS.east]);
-      const restrict = () => {
-        this.map.setMinZoom(0);
-        const minimum = this.map.getBoundsZoom(bounds, false, L.point(24, 24));
-        this.map.setMinZoom(minimum); this.map.setMaxBounds(bounds);
-        // At the overview scale, center the entire city rather than its last focused stop.
-        if (this.map.getZoom() <= minimum) this.map.setView(bounds.getCenter(), minimum, { animate: false });
-      };
-      this.map.on('resize', restrict);
-      this.map.on('zoomend', () => { if (this.map.getZoom() <= this.map.getMinZoom()) this.map.panTo(bounds.getCenter(), { animate: false }); });
-      restrict();
-    }
+    this.map.on('resize zoomend', () => this.updateRouteLock());
+  }
+
+  setRouteLocked(locked: boolean) { this.routeLocked = locked; this.updateRouteLock(); }
+
+  private updateRouteLock() {
+    if (this.applyingLock) return;
+    this.applyingLock = true;
+    try {
+      this.map.setMaxBounds(L.latLngBounds([]));
+      if (!this.routeLocked || !this.routeBounds?.isValid()) { this.map.setMinZoom(0); return; }
+      const minimum = Math.min(this.map.getMaxZoom(), this.map.getBoundsZoom(this.routeBounds, false, L.point(48, 48)));
+      this.map.setMinZoom(minimum);
+      const zoom = this.map.getZoom();
+      const projected = L.bounds(this.map.project(this.routeBounds.getNorthWest(), zoom), this.map.project(this.routeBounds.getSouthEast(), zoom));
+      const limit = routeViewportBounds({min:projected.min!,max:projected.max!}, this.map.getSize());
+      const bounds = L.latLngBounds(this.map.unproject(L.point(limit.min.x,limit.min.y),zoom), this.map.unproject(L.point(limit.max.x,limit.max.y),zoom));
+      this.map.setMaxBounds(bounds);
+      this.map.panInsideBounds(bounds, {animate:false});
+    } finally { this.applyingLock = false; }
+  }
+
+  private fitRoute(bounds: L.LatLngBounds) {
+    this.routeBounds = bounds.isValid() ? bounds : undefined;
+    this.applyingLock = true;
+    try {
+      this.map.setMaxBounds(L.latLngBounds([])); this.map.setMinZoom(0);
+      if (this.routeBounds) this.map.fitBounds(bounds, {padding:[24,24],maxZoom:this.map.getMaxZoom(),animate:false});
+    } finally { this.applyingLock = false; }
+    this.updateRouteLock();
   }
 
   showRoute(detail: RouteDetail, onStop: (stop: Stop) => void, direction?: string) {
@@ -60,7 +79,6 @@ export class TransitMap {
     }
     const visibleStops = direction ? [...new Map(patterns.flatMap(p => p.stops).map(s => [s.id, s])).values()] : detail.stops;
     for (const stop of visibleStops) {
-      if (this.athensLocked && !inAthens(stop)) continue;
       const marker = L.circleMarker([stop.lat, stop.lon], { radius: 5, color: '#172721', weight: 2, fillColor: '#fff', fillOpacity: 1 });
       marker.bindTooltip(e(stop.name));
       marker.on('click', () => onStop(stop));
@@ -68,7 +86,7 @@ export class TransitMap {
     }
     this.showVehicles(detail.vehicles, detail.route.color);
     const bounds = this.routes.getBounds().extend(this.stops.getBounds());
-    if (bounds.isValid()) this.map.fitBounds(bounds.pad(.12), { maxZoom: 16, animate: false });
+    this.fitRoute(bounds);
   }
 
   showVehicles(vehicles: Vehicle[], color: string) { this.syncVehicles(vehicles, () => color); }
@@ -76,7 +94,6 @@ export class TransitMap {
   private syncVehicles(vehicles: Vehicle[], color: (bus: Vehicle) => string, name: (bus: Vehicle) => string | undefined = () => undefined) {
     const now=Date.now(), present=new Set<string>();
     for (const bus of uniqueVehicles(vehicles)) {
-      if (this.athensLocked && !inAthens(bus)) continue;
       const key=bus.id; present.add(key);
       let state=this.busMarkers.get(key);
       if (!state) {
@@ -127,7 +144,7 @@ export class TransitMap {
   showPoints(origin?: Coordinate, destination?: Coordinate) {
     this.points.clearLayers();
     for (const [point, label, color] of [[origin, 'A', '#172721'], [destination, 'B', '#b92535']] as const) {
-      if (point && (!this.athensLocked || inAthens(point))) L.marker([point.lat, point.lon], { icon: L.divIcon({ className: 'point-marker', html: `<span style="background:${color}">${label}</span>`, iconSize: [30, 36], iconAnchor: [15, 36] }) }).addTo(this.points);
+      if (point) L.marker([point.lat, point.lon], { icon: L.divIcon({ className: 'point-marker', html: `<span style="background:${color}">${label}</span>`, iconSize: [30, 36], iconAnchor: [15, 36] }) }).addTo(this.points);
     }
   }
 
@@ -158,10 +175,10 @@ export class TransitMap {
     this.showJourneyVehicles(journey,network);
     // Nearby buses on the used lines must not widen the selected journey's camera.
     const bounds=this.routes.getBounds().extend(this.journey.getBounds()).extend(this.stops.getBounds());
-    if (bounds.isValid()) this.map.fitBounds(bounds.pad(.15),{maxZoom:17,animate:false});
+    this.fitRoute(bounds);
   }
 
-  focus(point: Coordinate) { if (!this.athensLocked || inAthens(point)) this.map.setView([point.lat, point.lon], 15, { animate: false }); }
-  clearJourney() { this.journey.clearLayers(); this.routes.clearLayers(); this.stops.clearLayers(); this.clearVehicles(); }
+  focus(point: Coordinate) { this.map.setView([point.lat, point.lon], 15, { animate: false }); }
+  clearJourney() { this.journey.clearLayers(); this.routes.clearLayers(); this.stops.clearLayers(); this.clearVehicles(); this.routeBounds=undefined; this.updateRouteLock(); }
   destroy() { this.lifetime.abort(); this.clearVehicles(); this.map.remove(); }
 }

@@ -85,8 +85,8 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
   return { calls, data };
 }
 
-async function unlockAthens(page: Page) {
-  const button = page.getByRole('button', { name:/^Athens lock/ });
+async function unlockRoute(page: Page) {
+  const button = page.getByRole('button', { name:/^Route lock/ });
   if (await button.getAttribute('aria-pressed') === 'true') await button.click();
 }
 
@@ -253,7 +253,7 @@ test('uses browser geolocation and reports denial with recovery', async ({ page,
 });
 
 test('validates coordinates and reports unreachable destinations', async ({ page }) => {
-  await mockTransit(page); await page.goto('/'); await unlockAthens(page); await page.locator('nav [data-nav="plan"]').click();
+  await mockTransit(page); await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
   await page.getByRole('combobox', { name: 'Start', exact: true }).fill('bad'); await page.getByRole('combobox', { name: 'Destination', exact: true }).fill('0,0');
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.getByRole('alert')).toContainText('Choose a start and destination');
@@ -288,7 +288,7 @@ test('plan and route views support direct URLs and browser history', async ({ pa
 
 test('authority discovery, nearby and code lookup lead to InfoPoint maps and service alerts', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']); await context.setGeolocation({ latitude: 40.79, longitude: -77.87 });
-  const { calls } = await mockTransit(page); await page.goto('/'); await unlockAthens(page); await page.getByRole('button', { name: 'Networks', exact: true }).click();
+  const { calls } = await mockTransit(page); await page.goto('/'); await page.getByRole('button', { name: 'Networks', exact: true }).click();
   await expect(page.locator('.agency-card')).toHaveCount(1);
   await page.getByRole('button', { name: 'Find nearby' }).click();
   await expect.poll(() => calls.some(url => url.includes('/Locate?Lat='))).toBe(true);
@@ -342,7 +342,7 @@ test('late agency directory responses cannot overwrite a newer code lookup', asy
       await route.fulfill({ json: [{ Id: 2, Name: 'Old directory result', RestUrl: 'https://realtime.catabus.com/InfoPoint/rest' }] });
     } else await route.fallback();
   });
-  await page.goto('/'); await unlockAthens(page); await page.getByRole('button', { name: 'Networks', exact: true }).click();
+  await page.goto('/'); await page.getByRole('button', { name: 'Networks', exact: true }).click();
   await page.getByLabel('Authority code', { exact: true }).fill('CATA');
   await page.getByRole('button', { name: 'Find by code' }).click();
   await expect(page.locator('.agency-card')).toContainText('CATA');
@@ -366,7 +366,7 @@ test('rapid navigation during map focus does not leave a callback on a removed m
 
 test('the supplied Passio network stays in Ohio and uses all three replicas', async ({ page }) => {
   const {calls}=await mockTransit(page,{passio:true});
-  await page.goto('/'); await unlockAthens(page);await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
+  await page.goto('/');await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
   await expect(page.locator('#agency-name')).toContainText('Ohio');
   await expect(page.locator('.route-card')).toHaveCount(3);
   await expect(page.locator('#source-summary')).toContainText('3/3 backend replicas');
@@ -382,7 +382,7 @@ test('the supplied Passio network stays in Ohio and uses all three replicas', as
 
 test('Passio keeps maps and predictions available with only one healthy replica', async ({ page }) => {
   await mockTransit(page,{passio:true,failedMirrors:['passiogo.com','replicated2of3.passiogo.com']});
-  await page.goto('/'); await unlockAthens(page);await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
+  await page.goto('/');await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
   await expect(page.locator('.route-card')).toHaveCount(3);
   await expect(page.locator('#source-summary')).toContainText('1/3 backend replicas');
   await page.locator('[data-route="66949"]').click();
@@ -404,7 +404,7 @@ test('Passio data supports Georgia trips when the UGA catalog is unavailable', a
 });
 
 test('provider metadata, fleet search, timetable and explicit trip comparison use the extracted reads',async({page})=>{
-  const {calls}=await mockTransit(page,{passio:true});await page.goto('/'); await unlockAthens(page);
+  const {calls}=await mockTransit(page,{passio:true});await page.goto('/');
   await page.getByRole('button',{name:'Networks',exact:true}).click();await page.locator('#select-ohio').click();
   await page.locator('#source-summary').click();await page.getByRole('button',{name:'Provider information',exact:true}).click();
   await expect(page.locator('#provider-details')).toContainText('Web API version');
@@ -544,86 +544,153 @@ test('system dark preference and blocked storage both leave the menu usable', as
   });
   await mockTransit(page); await page.goto('/');
   await expect(page.getByRole('button', { name:/^Dark mode/ })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name:/^Athens lock/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name:/^Route lock/ })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name:/^Dark mode/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await unlockAthens(page); await expect(page.getByRole('button', { name:/^Athens lock/ })).toHaveAttribute('aria-pressed', 'false');
+  await unlockRoute(page); await expect(page.getByRole('button', { name:/^Route lock/ })).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('Athens lock starts on, limits networks and avoids the global authority directory', async ({ page }) => {
+test('route lock defaults on, remembers its setting and keeps network choices available', async ({ page }) => {
   const { calls } = await mockTransit(page);
-  await page.goto('/'); await expect(page.getByRole('button', { name:/^Athens lock/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/');
+  await expect(page.getByRole('button', { name:/^Route lock/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name:/^Athens lock/ })).toHaveCount(0);
   await page.locator('nav [data-nav="agencies"]').click();
-  await expect(page.locator('#select-ohio')).toBeHidden(); await expect(page.locator('.network-tools')).toBeHidden();
-  await expect(page.locator('.agency-card')).toHaveCount(1); await expect(page.locator('.agency-card')).toContainText('Athens-Clarke County');
-  expect(calls.some(url => url.includes('TransitAuthorities'))).toBe(false);
-  await unlockAthens(page); await expect(page.locator('#select-ohio')).toBeVisible();
+  await expect(page.locator('#select-ohio')).toBeVisible(); await expect(page.locator('.network-tools')).toBeVisible();
   await expect(page.locator('.agency-card')).toContainText('CATA');
-  await page.reload(); await expect(page.getByRole('button', { name:/^Athens lock/ })).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#select-ohio')).toBeVisible();
+  expect(calls.some(url => url.includes('TransitAuthorities'))).toBe(true);
+  await unlockRoute(page);
+  await page.reload(); await expect(page.getByRole('button', { name:/^Route lock/ })).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(()=>localStorage.getItem('tranuga.route-lock.v1'))).toBe('false');
 });
 
-test('out-of-Athens buses stay out of counts and markers during loading and polling', async ({ page }) => {
-  await mockTransit(page, { outsideVehicle:true }); await page.clock.install();
+test('route lock changes the existing map without refetching or filtering bus data', async ({ page }) => {
+  const {calls}=await mockTransit(page, { outsideVehicle:true }); await page.clock.install();
   await page.goto('/routes/5750');
-  await expect(page.locator('.bus-marker')).toHaveCount(1); await expect(page.locator('.vehicle-card')).toHaveCount(1);
-  await expect(page.locator('#detail-stats strong')).toHaveText('1');
-  await page.clock.fastForward(16000); await expect(page.locator('.bus-marker')).toHaveCount(1);
-  await unlockAthens(page); await expect(page.locator('.vehicle-card')).toHaveCount(2); await expect(page.locator('.bus-marker')).toHaveCount(2);
-  await page.getByRole('button', { name:/^Athens lock/ }).click();
-  await expect(page.locator('.bus-marker')).toHaveCount(1); await expect(page.locator('.vehicle-card')).toHaveCount(1);
+  await expect(page.locator('.bus-marker')).toHaveCount(2); await expect(page.locator('.vehicle-card')).toHaveCount(2);
+  await expect(page.locator('#detail-stats strong')).toHaveText('2');
+  await page.locator('#route-map').evaluate(element=>element.dataset.instance='retained');
+  const before=calls.length;
+  await unlockRoute(page); await page.getByRole('button',{name:/^Route lock/}).click();
+  await expect(page.locator('#route-map')).toHaveAttribute('data-instance','retained');
+  expect(calls.length).toBe(before);
+  await page.clock.fastForward(16000);
+  await expect(page.locator('.vehicle-card')).toHaveCount(2); await expect(page.locator('.bus-marker')).toHaveCount(2);
 });
 
-test('turning Athens lock on from Ohio returns to Georgia and clears foreign trip points', async ({ page }) => {
-  await mockTransit(page, { passio:true }); await page.goto('/'); await unlockAthens(page);
+test('toggling route lock preserves the Ohio network and selected trip points', async ({ page }) => {
+  await mockTransit(page, { passio:true }); await page.goto('/');
   await page.locator('nav [data-nav="agencies"]').click(); await page.locator('#select-ohio').click();
   await expect(page.locator('[data-route="66949"]')).toBeVisible();
   await page.locator('nav [data-nav="plan"]').click(); await page.locator('#trip-origin').fill('39.33,-82.1'); await page.locator('#trip-destination').fill('39.32,-82.11');
-  await page.getByRole('button', { name:/^Athens lock/ }).click();
-  await expect(page.locator('#agency-name')).toContainText('Georgia'); await expect(page.locator('[data-route="66949"]')).toHaveCount(0);
-  await page.locator('nav [data-nav="plan"]').click(); await expect(page.locator('#trip-origin')).toHaveValue(''); await expect(page.locator('#trip-destination')).toHaveValue('');
+  await unlockRoute(page); await page.getByRole('button', { name:/^Route lock/ }).click();
+  await expect(page.locator('#agency-name')).toContainText('Ohio');
+  await expect(page.locator('#trip-origin')).toHaveValue('39.33,-82.1'); await expect(page.locator('#trip-destination')).toHaveValue('39.32,-82.11');
+  // Before a route exists, the planner stays free for choosing points.
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','false');
 });
 
-test('Athens lock filters address hints and blocks foreign typed or current-location endpoints', async ({ page, context }) => {
-  const { calls } = await mockTransit(page);
+test('route lock allows address hints and current locations outside Athens Georgia', async ({ page, context }) => {
+  await mockTransit(page);
   await context.grantPermissions(['geolocation']); await context.setGeolocation({ latitude:39.33, longitude:-82.1 });
   await page.route('**/api/places', route => route.fulfill({ json:{ type:'FeatureCollection', features:[
     { type:'Feature', geometry:{ type:'Point', coordinates:[-82.1,39.33] }, properties:{ name:'Ohio landmark' } },
     { type:'Feature', geometry:{ type:'Point', coordinates:[-83.377,33.948] }, properties:{ name:'Local landmark' } },
   ] } }));
   await page.goto('/plan'); await page.locator('#trip-origin').fill('Remote address');
-  await expect(page.locator('#trip-origin-hints [role="option"]')).toHaveCount(1);
-  await expect(page.locator('#trip-origin-hints')).toContainText('Local landmark');
-  await page.locator('#trip-origin-hints [role="option"]').click();
-  await page.locator('#trip-destination').fill('39.33,-82.1'); await page.getByRole('button', { name:'Find quickest bus trip' }).click();
-  await expect(page.locator('#trip-status')).toContainText('Athens lock is on');
-  expect(calls.some(url => url.includes('routeTracking_'))).toBe(false);
-  await page.getByRole('button', { name:'My location' }).click(); await expect(page.locator('#trip-status')).toContainText('outside Athens, Georgia');
-  await expect(page.locator('#trip-origin')).toHaveValue('Local landmark');
-  await unlockAthens(page); await page.getByRole('button', { name:'My location' }).click(); await expect(page.locator('#trip-origin')).toHaveValue('Current location');
+  await expect(page.locator('#trip-origin-hints [role="option"]')).toHaveCount(2);
+  await page.getByRole('option').filter({hasText:'Ohio landmark'}).click();
+  await expect(page.locator('#trip-origin')).toHaveValue('Ohio landmark');
+  await page.getByRole('button', { name:'My location' }).click();
+  await expect(page.locator('#trip-origin')).toHaveValue('Current location');
 });
 
-test('locked maps stop at the whole-Athens overview, stay bounded on resize, and unlock zoom', async ({ page }) => {
-  await mockTransit(page); await page.goto('/plan');
-  await page.locator('#trip-origin').fill('33.86,-83.54'); await page.locator('#trip-destination').fill('34.1,-83.24');
-  async function overview() {
-    const out = page.locator('.leaflet-control-zoom-out');
-    for (let i=0;i<20 && await out.getAttribute('aria-disabled') !== 'true';i++) await out.click();
-    await expect(out).toHaveAttribute('aria-disabled', 'true');
-    const map = (await page.locator('#trip-map').boundingBox())!;
-    const a = (await page.locator('.point-marker').nth(0).boundingBox())!, b = (await page.locator('.point-marker').nth(1).boundingBox())!;
-    for (const marker of [a,b]) { const x = marker.x + 15, y = marker.y + 36; expect(x).toBeGreaterThanOrEqual(map.x-1); expect(x).toBeLessThanOrEqual(map.x+map.width+1); expect(y).toBeGreaterThanOrEqual(map.y-1); expect(y).toBeLessThanOrEqual(map.y+map.height+1); }
-    // At least one city dimension fills most of the viewport, preventing a world-scale minimum.
-    expect(Math.max(Math.abs(a.x-b.x)/map.width, Math.abs(a.y-b.y)/map.height)).toBeGreaterThan(.75);
+async function transferTrip(page: Page) {
+  await mockTransit(page,{transfer:true,noVehicles:true}); await page.goto('/plan');
+  await page.locator('#trip-origin').fill('33.95,-83.41'); await page.locator('#trip-destination').fill('33.95,-83.35');
+  await page.getByRole('button',{name:'Find quickest bus trip'}).click();
+  await expect(page.locator('.trip-summary')).toBeVisible();
+}
+
+async function zoomToRouteOverview(page: Page) {
+  const out=page.locator('.leaflet-control-zoom-out');
+  for(let i=0;i<20 && await out.getAttribute('aria-disabled')!=='true';i++) await out.click();
+  await expect(out).toHaveAttribute('aria-disabled','true');
+}
+
+async function routeExtent(page: Page) {
+  return page.locator('#trip-map').evaluate(element=>{
+    const map=element.getBoundingClientRect();
+    const points=[...element.querySelectorAll('.point-marker')].map(marker=>{const p=marker.getBoundingClientRect();return {x:p.left+15,y:p.top+36};});
+    const left=Math.min(...points.map(p=>p.x)),right=Math.max(...points.map(p=>p.x));
+    const top=Math.min(...points.map(p=>p.y)),bottom=Math.max(...points.map(p=>p.y));
+    const overlap=(low:number,high:number,start:number,size:number)=>high-low<1 ? Number(low>=start-2 && high<=start+size+2) : Math.max(0,Math.min(high,start+size)-Math.max(low,start))/Math.min(high-low,size);
+    return {x:overlap(left,right,map.left,map.width),y:overlap(top,bottom,map.top,map.height),width:(right-left)/map.width,height:(bottom-top)/map.height,centerX:(left+right)/2-map.left,centerY:(top+bottom)/2-map.top};
+  });
+}
+
+test('route lock stops at the used-trip overview and allows close-up zoom',async({page})=>{
+  await transferTrip(page); await zoomToRouteOverview(page);
+  const extent=await routeExtent(page);
+  expect(extent.x).toBeGreaterThan(.99);expect(extent.y).toBe(1);
+  expect(extent.width).toBeGreaterThan(.6);expect(extent.width).toBeLessThan(1);
+  await page.locator('#trip-map').focus(); await page.locator('#trip-map').press('-');
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','true');
+  await page.locator('.leaflet-control-zoom-in').click();
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','false');
+  expect((await routeExtent(page)).width).toBeGreaterThan(extent.width*1.5);
+  await unlockRoute(page);
+  for(let i=0;i<8;i++) await page.locator('.leaflet-control-zoom-out').click();
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','false');
+});
+
+test('route lock permits panning in every direction while preserving half the route extent after resize',async({page})=>{
+  await transferTrip(page); await zoomToRouteOverview(page);
+  await page.locator('#trip-map').scrollIntoViewIfNeeded();
+  for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1]]) {
+    const before=await routeExtent(page);
+    const bounds=(await page.locator('#trip-map').boundingBox())!;
+    const x=bounds.x+bounds.width/2,y=bounds.y+Math.min(bounds.height/2,200);
+    await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx*1600,y+dy*1600,{steps:15});await page.mouse.up();
+    await expect.poll(async()=>Math.min((await routeExtent(page)).x,(await routeExtent(page)).y)).toBeGreaterThanOrEqual(.49);
+    await expect.poll(async()=>{const after=await routeExtent(page);return Math.hypot(after.centerX-before.centerX,after.centerY-before.centerY);}).toBeGreaterThan(10);
   }
-  await overview();
-  await page.locator('#trip-map').focus(); await page.locator('#trip-map').press('-'); await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled', 'true');
-  await page.setViewportSize({ width:520, height:900 }); await overview();
-  await unlockAthens(page);
-  for (let i=0;i<10;i++) await page.locator('.leaflet-control-zoom-out').click();
-  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled', 'false');
+  await page.setViewportSize({width:520,height:900});await zoomToRouteOverview(page);
+  await expect.poll(async()=>Math.min((await routeExtent(page)).x,(await routeExtent(page)).y)).toBeGreaterThanOrEqual(.49);
 });
 
+test('route details use a route-sized overview and refresh their bounds after a direction selection',async({page})=>{
+  await mockTransit(page);await page.goto('/routes/5750');
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','true');
+  const map=(await page.locator('#route-map').boundingBox())!;
+  const line=(await page.locator('#route-map .leaflet-overlay-pane path').first().boundingBox())!;
+  expect(Math.max(line.width/map.width,line.height/map.height)).toBeGreaterThan(.6);
+  expect(line.width).toBeLessThanOrEqual(map.width);expect(line.height).toBeLessThanOrEqual(map.height);
+  await page.locator('#route-direction').selectOption({index:1});
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','true');
+});
+
+test('a tiny route uses the closest available overview instead of a fixed city-scale zoom',async({page})=>{
+  const {data}=await mockTransit(page);
+  data.ugaTracking.forEach((row,index)=>{row.stop.latitude=33.95+index*.000001;row.stop.longitude=-83.37;});
+  await page.route('**/api?url=*',route=>{
+    const target=new URL(new URL(route.request().url()).searchParams.get('url')!);
+    if(target.pathname.endsWith('/busData.json')) return route.fulfill({status:503,json:{error:'No road trace in this fixture'}});
+    return route.fallback();
+  });
+  await page.goto('/routes/5750');
+  // This route fits inside the closest tile zoom: both ends of the zoom range coincide.
+  await expect(page.locator('.leaflet-control-zoom-in')).toHaveAttribute('aria-disabled','true');
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','true');
+});
+
+test('editing a completed trip removes the previous route lock so new map points can be chosen',async({page})=>{
+  await transferTrip(page);await zoomToRouteOverview(page);
+  await page.locator('#trip-origin').fill('33.96,-83.42');
+  await expect(page.locator('.journey-ride')).toHaveCount(0);
+  await expect(page.locator('.leaflet-control-zoom-out')).toHaveAttribute('aria-disabled','false');
+  await expect(page.getByRole('button',{name:/^Route lock/})).toHaveAttribute('aria-pressed','true');
+});
 
 test('favorites persist above active-first groups with UGA priority within each group', async ({ page }) => {
   await mockTransit(page, {cityRoute:true}); await page.goto('/');
