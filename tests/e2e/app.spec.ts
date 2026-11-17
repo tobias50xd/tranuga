@@ -567,12 +567,12 @@ test('locked maps stop at the whole-Athens overview, stay bounded on resize, and
 });
 
 
-test('favorites persist, stay separate from route navigation, and outrank UGA then city ordering', async ({ page }) => {
+test('favorites persist above active-first groups with UGA priority within each group', async ({ page }) => {
   await mockTransit(page, {cityRoute:true}); await page.goto('/');
   await expect(page.locator('.route-card')).toHaveCount(3);
   await expect(page.locator('.route-card').nth(0).locator('[data-route]')).toHaveAttribute('data-route','5750');
-  await expect(page.locator('.route-card').nth(1).locator('[data-route]')).toHaveAttribute('data-route','5741');
-  await expect(page.locator('.route-card').nth(2).locator('[data-route]')).toHaveAttribute('data-route','9001');
+  await expect(page.locator('.route-card').nth(1).locator('[data-route]')).toHaveAttribute('data-route','9001');
+  await expect(page.locator('.route-card').nth(2).locator('[data-route]')).toHaveAttribute('data-route','5741');
   await page.locator('[data-favorite="9001"]').click(); await expect(page).toHaveURL(/\/routes$/);
   await expect(page.locator('.route-card').first().locator('[data-route]')).toHaveAttribute('data-route','9001');
   await expect(page.locator('[data-favorite="9001"]')).toHaveAttribute('aria-pressed','true');

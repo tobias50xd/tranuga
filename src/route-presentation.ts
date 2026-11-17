@@ -18,6 +18,6 @@ export function routeState(route: Route): RouteState {
 export function sortRoutes(routes: Route[], favorites: ReadonlySet<string> = new Set()): Route[] {
   const order: Record<RouteState, number> = { active: 0, unconfirmed: 1, inactive: 2 };
   const operators = { uga: 0, city: 1, other: 2 };
-  return [...routes].sort((a, b) => Number(favorites.has(b.id)) - Number(favorites.has(a.id)) || operators[routeOperator(a)] - operators[routeOperator(b)] || order[routeState(a)] - order[routeState(b)] || a.shortName.localeCompare(b.shortName, undefined, { numeric: true, sensitivity: 'base' }) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  return [...routes].sort((a, b) => Number(favorites.has(b.id)) - Number(favorites.has(a.id)) || Number(routeState(a) !== 'active') - Number(routeState(b) !== 'active') || operators[routeOperator(a)] - operators[routeOperator(b)] || order[routeState(a)] - order[routeState(b)] || a.shortName.localeCompare(b.shortName, undefined, { numeric: true, sensitivity: 'base' }) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 export const routeStateLabel: Record<RouteState, string> = { active: 'Active service', unconfirmed: 'Service unconfirmed', inactive: 'Not in service' };

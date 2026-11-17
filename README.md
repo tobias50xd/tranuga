@@ -5,7 +5,7 @@ A static bus explorer and quickest-trip estimator, deployed with GitHub Actions 
 ## Use the app
 
 - **Main menu:** switch **Dark mode** on/off and use **Athens lock**, which is on by default. Both settings are remembered on this device.
-- **Routes:** star bus-line cards to pin favorites first, followed by UGA routes, then city routes. Active service has a light tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
+- **Routes:** star bus-line cards to pin favorites first, followed by all active routes, then inactive/unconfirmed routes. UGA has priority over city buses within each activity group. Active service has a light tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
 - **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Calculation shows an indeterminate loading bar. The result map draws only the ridden portions of the selected lines, marks transfer stops with a purple ↔ symbol, and refreshes their bus markers. Notes stay collapsed below the map.
 - **Data reliability:** inspect responding sources, disagreements and saved-backup state. **Sync all sources** crawls the selected network's full route/stop/prediction data. One responding source can still provide a labeled catalog/topology fallback, but a bus location from a three-node Passio network is displayed only after at least two replicas agree. A current Passio point supersedes an outdated duplicate for the same bus.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
@@ -15,7 +15,13 @@ All clock times use the device timezone except provider timetable clock labels, 
 
 ### Favorites and bus-line order
 
-Use the **star** on a bus-line card to add/remove a favorite without opening the route. Favorites stay at the top across reloads. The ordering is **favorites → UGA campus → city → other networks**, with active, unconfirmed and inactive service sorted within each group, followed by natural route-number order. A favorite city route can therefore precede an unfavorited UGA route. Search and **Active only** still apply to favorites.
+Use the **star** on a bus-line card to add/remove a favorite without opening the route. Favorites stay at the top across reloads. Cards use this order:
+
+1. **Favorites**, regardless of activity or category.
+2. **All remaining active routes**, with UGA campus before city buses, then other networks.
+3. **All remaining inactive/unconfirmed routes**, with the same UGA → city → other ordering.
+
+An active city route therefore precedes an inactive UGA route, while any favorite precedes every nonfavorite. Favorites use the same activity/operator ordering within their pinned group. Unconfirmed service stays in the non-active group, retaining its label and sorting before inactive service within the same operator. Route numbers sort naturally within matching groups. Search and **Active only** still apply to favorites.
 
 Operator labels use explicit UGA `isAthensBus`/selected-provider metadata, with reviewed aliases for older snapshots. Favorites are scoped by network kind, agency ID and native/canonical route ID, so equal IDs in Ohio and Georgia remain distinct. They are saved locally under `tranuga.favorites.v1`, capped at 500 entries. Blocked/full storage keeps session favorites usable; malformed saved entries are ignored. No account or location is needed. See [favorites.ts](src/favorites.ts) and [route-presentation.ts](src/route-presentation.ts).
 
@@ -81,7 +87,7 @@ Notes are **collapsed dropdowns**, placed after route maps and after the planner
 | `action` | Map pin | Select the trip points or recover from a location error. |
 | `info` | Information circle | Additional context that does not imply an error. |
 
-Informational cards use a quiet green tone, warnings amber, and action/request errors red with `role="alert"`. The mapping lives in [notes.ts](src/notes.ts); it organizes messages for display without changing source status, service availability or planner decisions. Operator alert text is escaped and never rendered as HTML. Bus-line cards sort favorites first, then UGA before city, with service state and natural route numbers inside each group. Grey cards remain available for viewing route details, while the planner uses only eligible active service.
+Informational cards use a quiet green tone, warnings amber, and action/request errors red with `role="alert"`. The mapping lives in [notes.ts](src/notes.ts); it organizes messages for display without changing source status, service availability or planner decisions. Operator alert text is escaped and never rendered as HTML. Bus-line cards sort favorites first, then all active routes before inactive/unconfirmed routes, with UGA before city inside each activity group. Grey cards remain available for viewing route details, while the planner uses only eligible active service.
 
 [compact-note.ts](src/compact-note.ts) applies ordered, anchored regex rules to known messages; examples:
 
@@ -394,7 +400,7 @@ src/preferences.ts          Theme/area preference defaults and storage
 public/theme.js             Early saved/system palette before app rendering
 src/places.ts               Stop/address autocomplete and private query transport
 src/notes.ts                Readable note classes, icons and source details
-src/route-presentation.ts   Favorite/operator/service ordering and labels
+src/route-presentation.ts   Favorite/activity/operator ordering and labels
 src/favorites.ts            Bounded per-network local bus-line favorites
 src/compact-note.ts         Conservative regex note fragments
 src/journey-map.ts          Used ride geometry and transfer-stop extraction
