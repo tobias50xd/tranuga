@@ -1,0 +1,173 @@
+name: Build and release mobile apps
+
+on:
+  push:
+    branches: ['**']
+    tags: ['mobile-v*']
+    paths:
+      - 'mobile/**'
+      - 'src/**'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'src/**'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  MOBILE_BUILD_NUMBER: ${{ github.run_number }}
+  EXPO_PUBLIC_TRANSIT_URL: ${{ vars.MOBILE_TRANSIT_URL }}
+  EXPO_PUBLIC_MAP_STYLE_URL: ${{ vars.MOBILE_MAP_STYLE_URL }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        run: node -e 'const tag = "mobile-v" + require("./package.json").version; if (process.env.GITHUB_REF_NAME !== tag) throw new Error("Tag must be " + tag)'
+
+  android:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build standalone Android APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Package Android APK
+        if: "!startsWith(github.ref, 'refs/tags/mobile-v')"
+        run: bash scripts/package-android.sh
+      - name: Package release Android APK
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash scripts/package-android.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tranuga-android
+          path: mobile/build/artifacts/*.apk
+          if-no-files-found: error
+
+  ios:
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_USE_PRECOMPILED_MODULES: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.2.app
+      - run: npm ci
+      - run: npx expo prebuild --platform ios --no-install
+      - name: Install native pods
+        working-directory: mobile/ios
+        run: pod install
+      - name: Build and package iOS Simulator app
+        run: |
+          xcodebuild -workspace ios/TranUGA.xcworkspace -scheme TranUGA -configuration Release \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/tranuga-ios-simulator" \
+            CODE_SIGNING_ALLOWED=NO build -quiet
+          simulator_app="$RUNNER_TEMP/tranuga-ios-simulator/Build/Products/Release-iphonesimulator/TranUGA.app"
+          test -d "$simulator_app"
+          mkdir -p build/artifacts
+          ditto -c -k --keepParent "$simulator_app" build/artifacts/TranUGA-iOS-Simulator.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tranuga-ios-simulator
+          path: mobile/build/artifacts/TranUGA-iOS-Simulator.zip
+          if-no-files-found: error
+      - name: Sign and export iPhone release when configured
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: bash scripts/package-ios-device.sh
+      - uses: actions/upload-artifact@v7
+        if: startsWith(github.ref, 'refs/tags/mobile-v') && hashFiles('mobile/build/artifacts/TranUGA-iOS-AdHoc.ipa') != ''
+        with:
+          name: tranuga-ios-device
+          path: mobile/build/artifacts/TranUGA-iOS-AdHoc.ipa
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/mobile-v')
+    needs: [android, ios]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: tranuga-*
+          path: assets
+          merge-multiple: true
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          test -f assets/TranUGA-iOS-Simulator.zip
+          if [[ ! -f assets/TranUGA-Android.apk && ! -f assets/TranUGA-Android-preview.apk ]]; then exit 1; fi
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" assets/* --clobber
+          else
+            release_flags=()
+            if [[ ! -f assets/TranUGA-Android.apk || ! -f assets/TranUGA-iOS-AdHoc.ipa ]]; then
+              release_flags+=(--prerelease)
+            fi
+            gh release create "$GITHUB_REF_NAME" assets/* --verify-tag --generate-notes \
+              --title "TranUGA ${GITHUB_REF_NAME#mobile-}" "${release_flags[@]}"
+          fi

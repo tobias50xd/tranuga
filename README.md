@@ -2,6 +2,10 @@
 
 A static bus explorer and quickest-trip estimator, deployed with GitHub Actions to Cloudflare Workers Static Assets. The browser lists routes, maps current stops and reported bus positions/headings, and computes directed bus journeys between named stops, addresses, map points or your location. Its visual design is original; APK layouts, artwork, assets and embedded keys are not build inputs.
 
+## Mobile apps
+
+TranUGA also runs on iOS and Android. The GitHub mobile workflow builds an Android APK and an iOS Simulator app, then publishes versioned release assets from mobile tags. An Apple-signed device package is available when release signing is configured. [Mobile builds and installation](mobile/README.md)
+
 ## Use the app
 
 - **Main menu:** switch **Dark mode** on/off and use **Route lock**, which is on by default. Both settings are remembered on this device.
