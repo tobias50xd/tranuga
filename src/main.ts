@@ -299,7 +299,12 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button"><span aria-hidden="true">⌖</span> My location</button></div>
       ${pointField('destination', 'Destination', destinationLabel || (destination ? coordinates(destination) : ''))}<div class="field-actions"><button type="button" id="pick-destination" class="text-button">⊕ Pick on map</button><button type="button" id="swap" class="text-button">⇅ Swap</button></div>
       <label class="field-label" for="max-walk">Maximum walk to / from the bus</label><select id="max-walk"><option value="800">800 m · about 10 minutes</option><option value="1200" selected>1.2 km · about 15 minutes</option><option value="2000">2 km · about 25 minutes</option></select>
-      <button class="button primary full" type="submit" id="find-trip"><span id="trip-progress" class="calculation-spinner" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span><span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span></button>
+      <button class="button primary full" type="submit" id="find-trip">
+        <span id="trip-progress" class="calculation-motion" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden>
+          <span class="calculation-travel" aria-hidden="true"><span class="calculation-bus"><span class="calculation-windows"></span><span class="calculation-wheel"></span><span class="calculation-wheel"></span></span></span>
+        </span>
+        <span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span>
+      </button>
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
       <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
@@ -316,13 +321,17 @@ function showPlanner(historyMode: HistoryMode = 'push') {
   map.showPoints(origin, destination);
   void refreshLiveVehicles(true);
   const token = operation, current = service;
+  const searchCenter = agency.center ?? center;
   let stopHints = knownStops(agency);
   // Fetch only stop directories; address typing never triggers a full ETA crawl.
   void current.getStops().then(stops => {
-    if (token === operation) stopHints = [...new Map([...stops, ...stopHints].map(stop => [stop.id, stop])).values()];
+    if (token !== operation) return;
+    stopHints = [...new Map([...stops, ...stopHints].map(stop => [stop.id, stop])).values()];
+    Object.values(pointInputs).forEach(input => input.refreshStops());
   }).catch(() => { /* Reviewed local stops and map selection remain available. */ });
   for (const kind of ['origin', 'destination'] as const) {
-    pointInputs[kind] = new PlaceInput($<HTMLInputElement>(`#trip-${kind}`), () => stopHints, agency.center || center, placeSearch, (place, text) => {
+    const near = () => (kind === 'origin' ? destination : origin) ?? searchCenter;
+    pointInputs[kind] = new PlaceInput($<HTMLInputElement>(`#trip-${kind}`), () => stopHints, searchCenter, near, placeSearch, (place, text) => {
       const point = place || parseCoordinate(text) || undefined;
       if (kind === 'origin') { origin = point; originLabel = text; } else { destination = point; destinationLabel = text; }
       pickMode = undefined; resetTripResult(); map?.showPoints(origin, destination);

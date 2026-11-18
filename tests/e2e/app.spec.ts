@@ -435,17 +435,40 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await page.getByRole('combobox', { name: 'Start', exact: true }).fill(`${from.latitude}, ${from.longitude}`);
   await page.getByRole('combobox', { name: 'Destination', exact: true }).fill(`${to.latitude}, ${to.longitude}`);
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
-  await expect(page.getByRole('progressbar', {name:'Route calculation'})).toBeVisible();
-  await expect(page.locator('#find-trip #trip-progress')).toBeVisible();
-  await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy', 'true');
+  const button = page.locator('#find-trip');
+  const progress = button.getByRole('progressbar', { name: 'Route calculation' });
+  const travel = progress.locator('.calculation-travel');
+  const bus = travel.locator('.calculation-bus');
+  await expect(progress).toBeVisible();
+  await expect(button).toHaveAttribute('aria-busy', 'true');
+  await expect(travel).toHaveCSS('animation-name', 'calculation-drive');
+  const [early, late] = await bus.evaluate(element => {
+    const travel = element.parentElement!;
+    const drive = travel.getAnimations()[0];
+    drive.pause();
+    const { left, width } = travel.parentElement!.getBoundingClientRect();
+    return [580, 1620].map(time => {
+      drive.currentTime = time;
+      const bus = element.getBoundingClientRect();
+      return (bus.left + bus.width / 2 - left) / width;
+    });
+  });
+  expect(early).toBeGreaterThan(0);
+  expect(early).toBeLessThan(.5);
+  expect(late).toBeGreaterThan(.5);
+  expect(late).toBeLessThan(1);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(travel).toHaveCSS('animation-name', 'none');
+  await expect(bus).toHaveCSS('animation-name', 'none');
+  await expect(bus).toBeVisible();
+  await expect(button).toContainText('Calculating route…');
   await expect(page.locator('#trip-origin')).toBeDisabled();
   await expect(page.locator('#swap')).toBeDisabled();
   release();
   await expect(page.locator('.trip-summary')).toBeVisible();
   await expect(page.locator('#trip-origin')).toBeEnabled();
-  await expect(page.getByRole('progressbar', {name:'Route calculation'})).toBeHidden();
-  await expect(page.locator('#find-trip #trip-progress')).toBeHidden();
-  await expect(page.locator('#find-trip')).toHaveAttribute('aria-busy', 'false');
+  await expect(progress).toBeHidden();
+  await expect(button).toHaveAttribute('aria-busy', 'false');
 });
 
 test('late agency directory responses cannot overwrite a newer code lookup', async ({ page }) => {
@@ -604,6 +627,50 @@ test('address suggestions use POST, selection preserves coordinates through swap
   await expect(page.locator('.trip-summary')).toHaveCount(0);
   expect(bodies.length).toBe(2); expect(bodies[0]).toMatchObject({ query: 'Alpha address', lat: 33.948, lon: -83.377 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('both trip dropdowns rank stops and addresses by distance and keep the highlighted choice', async ({ page }) => {
+  await mockTransit(page);
+  const waiting = Promise.withResolvers<void>();
+  const requests: Record<string, unknown>[] = [];
+  await page.route('**/api/places', async route => {
+    requests.push(route.request().postDataJSON());
+    await waiting.promise;
+    await route.fulfill({ json: { type: 'FeatureCollection', features: [
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [-83.385, 33.948] }, properties: { name: 'Science Complex Annex' } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [-83.365, 33.95] }, properties: { name: 'Science Complex East Gate' } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [-83.377, 33.948] }, properties: { name: 'Science Complex Visitor Entrance' } },
+    ] } });
+  });
+  await page.goto('/plan');
+  const start = page.getByRole('combobox', { name: 'Start', exact: true });
+  const end = page.getByRole('combobox', { name: 'Destination', exact: true });
+  const startResults = page.locator('#trip-origin-hints [role="option"] strong');
+  const endResults = page.locator('#trip-destination-hints [role="option"] strong');
+  await start.fill('Science Complex');
+  await expect(startResults.first()).toHaveText('Cedar St. Science Complex Westbound');
+  await start.press('ArrowDown');
+  waiting.resolve();
+  await expect(startResults).toHaveText([
+    'Science Complex Visitor Entrance', 'Cedar St. Science Complex Westbound', 'Cedar St. Science Complex Eastbound',
+    'Science Complex Annex', 'Science Complex East Gate',
+  ]);
+  await start.press('Enter');
+  await expect(start).toHaveValue('Cedar St. Science Complex Westbound');
+
+  await start.fill('33.95, -83.365');
+  await end.fill('Complex Science');
+  await expect(endResults).toHaveText([
+    'Science Complex East Gate', 'Cedar St. Science Complex Eastbound', 'Cedar St. Science Complex Westbound',
+    'Science Complex Visitor Entrance', 'Science Complex Annex',
+  ]);
+  await endResults.first().click();
+  await start.fill('Complex Science');
+  await expect(startResults.first()).toHaveText('Science Complex East Gate');
+  expect(requests).toEqual([
+    { query: 'Science Complex', lat: 33.948, lon: -83.377 },
+    { query: 'Complex Science', lat: 33.948, lon: -83.377 },
+  ]);
 });
 
 test('late address responses cannot overwrite new hints or a removed planner', async ({ page }) => {

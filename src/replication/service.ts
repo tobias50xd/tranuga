@@ -31,7 +31,7 @@ const optional = (value: Record<string, unknown>, key: string, type: 'number' | 
 const provenance = (value: Record<string, unknown>) => optional(value, 'snapshotAt', 'number') && (value.agreement === undefined || ['corroborated','single-source','conflict','stale-backup'].includes(String(value.agreement))) && (value.sources === undefined || arrayOf(value.sources, (ref): ref is {source:string;id:string;fetchedAt:number} => object(ref) && typeof ref.source === 'string' && typeof ref.id === 'string' && Number.isFinite(ref.fetchedAt) && optional(ref, 'cached', 'boolean')));
 const isStop = (value: unknown): value is Stop => object(value) && point(value) && typeof value.id === 'string' && typeof value.name === 'string' && provenance(value);
 const isRoute = (value: unknown): value is Route => object(value) && ['id', 'name', 'shortName', 'color', 'agencyId'].every(key => typeof value[key] === 'string') && typeof value.active === 'boolean' && (value.operator === undefined || ['uga','city','other'].includes(String(value.operator))) && (value.availability === undefined || ['current','published','unknown'].includes(String(value.availability))) && provenance(value);
-const isVehicle = (value: unknown): value is Vehicle => point(value) && object(value) && typeof value.id === 'string' && typeof value.routeId === 'string' && Number.isFinite(value.heading) && ['updatedAt','speed'].every(key => optional(value,key,'number')) && ['tripId','destination'].every(key => optional(value,key,'string')) && optional(value,'active','boolean') && provenance(value);
+const isVehicle = (value: unknown): value is Vehicle => point(value) && object(value) && typeof value.id === 'string' && typeof value.routeId === 'string' && Number.isFinite(value.heading) && ['updatedAt','speed'].every(key => optional(value,key,'number')) && ['tripId','destination','fleetIdentity'].every(key => optional(value,key,'string')) && optional(value,'active','boolean') && provenance(value);
 const isDeparture = (value: unknown): value is Departure => object(value) && typeof value.stopId === 'string' && typeof value.routeId === 'string' && Number.isFinite(value.arrivalTime) && ['updatedAt','departureTime'].every(key => optional(value,key,'number')) && ['tripId','direction','vehicleId'].every(key => optional(value,key,'string')) && optional(value,'scheduled','boolean') && provenance(value);
 const isPattern = (value: unknown): value is RoutePattern => object(value) && ['id', 'routeId', 'direction'].every(key => typeof value[key] === 'string') && arrayOf(value.stops, isStop) && arrayOf(value.shape, point) && optional(value,'loop','boolean') && provenance(value) && (value.shapeSegments === undefined || arrayOf(value.shapeSegments, (part): part is Coordinate[] => arrayOf(part, point)));
 const isStrings = (value: unknown): value is string[] => arrayOf(value, (item): item is string => typeof item === 'string');
@@ -184,18 +184,24 @@ export class ReplicatedTransitService implements TransitProvider {
   routeVehicleTracker(routeId: string): RouteVehicleTracker {
     return new RouteVehicleTracker(routeId, this.routeVehicleFeeds(routeId), this.now);
   }
-  private routeVehicleFeeds(routeId: string): RouteVehicleFeed[] {
+  private routeVehicleFeeds(routeId?: string): RouteVehicleFeed[] {
     const session = this.session();
     const alias = this.aliases.routes.find(entry => entry.id === routeId);
+    const prefixedRoute = routeId !== undefined && this.sources.some(source => source.prefix && routeId.startsWith(source.prefix));
     return [...this.sources].sort((a, b) => a.priority - b.priority).flatMap(source => {
-      if (alias && source.aliasKey && !alias.sources[source.aliasKey]) return [];
-      const native = session.native('routes', routeId, source);
-      if (native === undefined || !alias && !source.prefix && this.sources.some(other => other.prefix && routeId.startsWith(other.prefix))) return [];
-      const feeds = source.service instanceof ReplicatedTransitService
+      const native = routeId === undefined ? undefined : session.native('routes', routeId, source);
+      const coversRoute = routeId === undefined || native !== undefined
+        && !(alias && source.aliasKey && !alias.sources[source.aliasKey])
+        && (alias !== undefined || !prefixedRoute || !!source.prefix);
+      // The portal spans both Georgia fleets, so a prefixed route can still use it to confirm assignments.
+      if (!coversRoute && source.prefix && (alias || prefixedRoute)) return [];
+      const feeds: RouteVehicleFeed[] = source.service instanceof ReplicatedTransitService
         ? source.service.routeVehicleFeeds(native)
         : [{ label: source.label, read: () => source.service.refreshVehicles(true) }];
       return feeds.map(feed => ({
         label: feed.label,
+        coversRoute: coversRoute && feed.coversRoute !== false,
+        directAssignments: source.aliasKey === 'infopoint' || feed.directAssignments,
         read: async () => {
           const vehicles = await feed.read();
           if (!arrayOf(vehicles, isVehicle)) throw new Error('Vehicle response failed normalized schema validation.');

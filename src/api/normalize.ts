@@ -39,15 +39,21 @@ export function normalizeRoutes(value: unknown, agencyId: string, kind: 'uga' | 
 export function normalizeStops(value: unknown): Stop[] {
   return rows(value, 'Stop list').flatMap(row => { const point = coordinate(row), id = text(row.id ?? row.StopId); return point && id ? [{ id, name: text(row.name ?? row.Name ?? row.Description, `Stop ${id}`), ...point }] : []; });
 }
-export function normalizeVehicles(value: unknown, kind: 'uga' | 'infopoint', now = Date.now()): Vehicle[] {
+export function vehicleFleetIdentity(fleet: string, id: string, name: unknown): string | undefined {
+  const number = text(name).trim();
+  return number ? JSON.stringify([fleet, id, number]) : undefined;
+}
+export function normalizeVehicles(value: unknown, kind: 'uga' | 'infopoint', now = Date.now(), agencyId?: string): Vehicle[] {
   const source = rows(value, 'Vehicle list');
   const vehicles: Row[] = kind === 'uga' ? source : source.flatMap(row => list(row.Vehicles).map(v => ({ ...v, RouteId: v.RouteId ?? row.RouteId } as Row)));
   return vehicles.flatMap(row => {
     const point = coordinate(row), id = text(row.id ?? row.VehicleId), routeId = text(row.routeId ?? row.RouteId);
     if (!point || !id || !routeId) return [];
     const updatedAt = timestamp(row.lastUpdate ?? row.LastUpdated ?? row.proxyTimestamp);
+    const fleet = kind === 'uga' ? row.isAthensBus === true ? 'athens-ga' : row.isAthensBus === false ? 'uga-campus' : undefined
+      : agencyId === '58' ? 'athens-ga' : undefined;
     // Keep older vehicles visible with their timestamp; the UI labels them stale, and planner excludes them.
-    return [{ id, routeId, ...point, heading: ((num(row.heading ?? row.Heading) ?? 0) % 360 + 360) % 360, speed: num(row.speed ?? row.Speed), updatedAt: updatedAt && updatedAt < now + 60000 ? updatedAt : undefined, destination: text(row.Destination ?? row.destination), tripId: text(row.tripId ?? row.TripId) || undefined }];
+    return [{ id, routeId, ...point, heading: ((num(row.heading ?? row.Heading) ?? 0) % 360 + 360) % 360, speed: num(row.speed ?? row.Speed), updatedAt: updatedAt && updatedAt < now + 60000 ? updatedAt : undefined, destination: text(row.Destination ?? row.destination), tripId: text(row.tripId ?? row.TripId) || undefined, fleetIdentity: fleet && vehicleFleetIdentity(fleet, id, row.name ?? row.Name) }];
   });
 }
 export function ugaDepartures(value: unknown): Departure[] {

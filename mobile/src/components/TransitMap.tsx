@@ -76,13 +76,17 @@ function BusMarkers({ vehicles, onPress }: { vehicles: MapVehicle[]; onPress?: (
   const colors = useMemo(() => new Map(vehicles.map(vehicle => [vehicle.id, vehicle.color])), [vehicles]);
   const positions = useAnimatedBuses(vehicles);
   return <>{positions.map(vehicle => {
-    const color = vehicleIsStale(vehicle) ? '#68736e' : (colors.get(vehicle.id) || palette.green);
+    const stale = vehicleIsStale(vehicle);
+    const color = stale ? '#798580' : (colors.get(vehicle.id) || palette.green);
     return <Marker key={vehicle.id} id={`bus-${vehicle.id}`} lngLat={lngLat(vehicle)}
       onPress={onPress ? () => onPress(vehicle.id) : undefined}>
-      <View accessible accessibilityLabel={`Bus ${vehicle.id}, heading ${headingLabel(vehicle.heading)}`}
+      <View accessible accessibilityLabel={`Bus ${vehicle.id}, heading ${headingLabel(vehicle.heading)}${stale ? ', last known position' : ''}`}
         style={[mapStyles.bus, { backgroundColor: color }]}>
-        <View style={[mapStyles.bearing, { transform: [{ rotate: `${vehicle.heading}deg` }] }]} />
-        <Ionicons name="bus" size={14} color="#fff" />
+        <View style={[mapStyles.busCenter, stale && mapStyles.busCenterStale]}>
+          <View style={{ transform: [{ rotate: `${vehicle.heading}deg` }] }}>
+            <Ionicons name="arrow-up" size={15} color="#fff" style={mapStyles.busArrow} />
+          </View>
+        </View>
       </View>
     </Marker>;
   })}</>;
@@ -162,10 +166,10 @@ const mapStyles = StyleSheet.create({
   map: { flex: 1 },
   pin: { width: 25, height: 25, borderRadius: 13, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   pinText: { color: '#fff', fontSize: 12, fontWeight: '900' },
-  bus: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  bearing: { position: 'absolute', top: -4, width: 0, height: 0, borderLeftWidth: 4, borderRightWidth: 4,
-    borderBottomWidth: 6, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#fff',
-    transformOrigin: 'center 15px' },
+  bus: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  busCenter: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#172822e6', alignItems: 'center', justifyContent: 'center' },
+  busCenterStale: { backgroundColor: '#47534e' },
+  busArrow: { includeFontPadding: false },
   message: { position: 'absolute', top: 10, left: 10, backgroundColor: '#fff', padding: 8, borderRadius: 8, color: palette.ink },
   attribution: { position: 'absolute', right: 0, bottom: 0, backgroundColor: '#fffe', color: palette.ink, paddingHorizontal: 6, paddingVertical: 3, fontSize: 11 },
 });

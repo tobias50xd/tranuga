@@ -1,4 +1,5 @@
 import type { Coordinate, Stop } from './types';
+import { distanceMeters } from './planner';
 import { escapeHtml as e } from './ui';
 
 export interface Place extends Coordinate { id: string; label: string; detail: string; kind: 'stop' | 'place' }
@@ -21,10 +22,19 @@ export function normalizePlaces(raw: unknown): Place[] {
   }
   return result.slice(0, 5);
 }
-export function matchStops(stops: Stop[], query: string): Place[] {
+export function nearestPlaces(places: readonly Place[], near: Coordinate, limit: number): Place[] {
+  return places.map(place => ({ place, distance: distanceMeters(near, place) }))
+    .sort((a, b) => a.distance - b.distance || a.place.label.localeCompare(b.place.label))
+    .slice(0, limit).map(({ place }) => place);
+}
+export function matchStops(stops: readonly Stop[], query: string, near: Coordinate): Place[] {
   const terms = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
   if (query.trim().length < 2) return [];
-  return stops.filter(stop => terms.every(term => stop.name.toLocaleLowerCase().includes(term))).sort((a, b) => Number(!a.name.toLocaleLowerCase().startsWith(query.toLocaleLowerCase())) - Number(!b.name.toLocaleLowerCase().startsWith(query.toLocaleLowerCase())) || a.name.localeCompare(b.name)).slice(0, 5).map(stop => ({ ...stop, id: `stop:${stop.id}`, label: stop.name, detail: 'Transit stop · service depends on the current network', kind: 'stop' }));
+  const matches: Place[] = stops.filter(stop => {
+    const name = stop.name.toLocaleLowerCase();
+    return terms.every(term => name.includes(term));
+  }).map(stop => ({ ...stop, id: `stop:${stop.id}`, label: stop.name, detail: 'Transit stop · service depends on the current network', kind: 'stop' }));
+  return nearestPlaces(matches, near, 5);
 }
 export class PlaceSearch {
   private cache = new Map<string, { at: number; places: Place[] }>();
@@ -57,9 +67,12 @@ export class PlaceInput {
   private revision = 0;
   private active = -1;
   private choices: Place[] = [];
+  private query = '';
+  private addresses: Place[] = [];
+  private addressStatus: 'idle' | 'searching' | 'finished' | 'failed' = 'idle';
   private list: HTMLElement;
   private status: HTMLElement;
-  constructor(private input: HTMLInputElement, private stops: () => Stop[], private bias: Coordinate, private search: PlaceSearch, private change: (place: Place | undefined, text: string) => void, private allowed: (point: Coordinate) => boolean = () => true) {
+  constructor(private input: HTMLInputElement, private stops: () => Stop[], private bias: Coordinate, private near: () => Coordinate, private search: PlaceSearch, private change: (place: Place | undefined, text: string) => void, private allowed: (point: Coordinate) => boolean = () => true) {
     this.list = document.getElementById(`${input.id}-hints`)!;
     this.status = document.getElementById(`${input.id}-status`)!;
     const signal = this.lifetime.signal;
@@ -76,20 +89,43 @@ export class PlaceInput {
     this.list.addEventListener('click', event => { const option = (event.target as Element).closest<HTMLElement>('[data-choice]'); if (option && !input.disabled && !input.matches(':disabled')) this.select(Number(option.dataset.choice)); }, { signal });
   }
   setValue(text: string) { this.close(); this.input.value = text; }
+  refreshStops() {
+    if (!this.query) return;
+    const near = this.near();
+    const stops = matchStops(this.stops().filter(this.allowed), this.query, near);
+    const activeId = this.choices[this.active]?.id;
+    this.choices = this.addresses.length ? nearestPlaces([...stops, ...this.addresses.filter(this.allowed)], near, 8) : stops;
+    this.active = this.choices.findIndex(place => place.id === activeId);
+    const messages = {
+      idle: `${this.choices.length} stop suggestions. Use arrow keys and Enter to choose.`,
+      searching: 'Searching addresses…',
+      finished: this.choices.length ? `${this.choices.length} suggestions. Use arrow keys and Enter to choose.` : 'No matches. Try another name or use the map.',
+      failed: 'Address search is unavailable. Choose a stop or use the map.',
+    };
+    this.draw(messages[this.addressStatus]);
+  }
   private select(index: number) { const place = this.choices[index]; if (!place) return; this.setValue(place.label); this.change(place, place.label); }
   private update() {
     this.close(); const query = this.input.value.trim(); if (query.length < 2 || query.length > 120 || /^[-+\d.\s,]+$/.test(query)) return;
-    this.choices = matchStops(this.stops().filter(this.allowed), query); this.draw(query.length < 3 ? 'Type at least 3 characters to search addresses.' : 'Searching addresses…');
-    if (query.length < 3 || this.choices.length >= 3 || this.choices.some(place => place.label.toLocaleLowerCase() === query.toLocaleLowerCase())) { this.status.textContent = `${this.choices.length} stop suggestions. Use arrow keys and Enter to choose.`; return; }
+    this.query = query;
+    this.refreshStops();
+    if (query.length < 3 || this.choices.length >= 3 || this.choices.some(place => place.label.toLocaleLowerCase() === query.toLocaleLowerCase())) return;
+    this.addressStatus = 'searching';
+    this.status.textContent = 'Searching addresses…';
     const revision = this.revision;
     this.timer = setTimeout(async () => {
       const request = this.request = new AbortController();
       try {
         const places = await this.search.search(query, this.bias, request.signal);
         if (revision !== this.revision || request.signal.aborted) return;
-        this.choices = [...matchStops(this.stops().filter(this.allowed), query), ...places.filter(this.allowed)].slice(0, 8);
-        this.draw(this.choices.length ? `${this.choices.length} suggestions. Use arrow keys and Enter to choose.` : 'No matches. Try another name or use the map.');
-      } catch { if (revision === this.revision && !request.signal.aborted) this.draw('Address search is unavailable. Choose a stop or use the map.'); }
+        this.addresses = places;
+        this.addressStatus = 'finished';
+        this.refreshStops();
+      } catch {
+        if (revision !== this.revision || request.signal.aborted) return;
+        this.addressStatus = 'failed';
+        this.refreshStops();
+      }
     }, 500);
   }
   private draw(message: string) {
@@ -98,6 +134,10 @@ export class PlaceInput {
     if (this.active >= 0) { this.input.setAttribute('aria-activedescendant', `${this.input.id}-option-${this.active}`); this.list.children[this.active]?.scrollIntoView({ block: 'nearest' }); } else this.input.removeAttribute('aria-activedescendant');
     this.status.textContent = message;
   }
-  close() { clearTimeout(this.timer); this.request?.abort(); this.revision++; this.active = -1; this.choices = []; this.list.hidden = true; this.input.setAttribute('aria-expanded', 'false'); this.input.removeAttribute('aria-activedescendant'); this.status.textContent = ''; }
+  close() {
+    clearTimeout(this.timer); this.request?.abort(); this.revision++;
+    this.query = ''; this.addresses = []; this.addressStatus = 'idle'; this.active = -1; this.choices = [];
+    this.list.hidden = true; this.input.setAttribute('aria-expanded', 'false'); this.input.removeAttribute('aria-activedescendant'); this.status.textContent = '';
+  }
   destroy() { this.close(); this.lifetime.abort(); }
 }

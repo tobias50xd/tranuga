@@ -52,11 +52,20 @@ describe('place and stop search', () => {
   });
   it('matches stop words in any order and never mixes Ohio with reviewed Georgia stop hints', () => {
     const stops = [{ id: '1', name: 'Tate Student Center', lat: 33.948, lon: -83.377 }];
-    expect(matchStops(stops, 'STUDENT tate')[0].label).toBe(stops[0].name);
-    expect(matchStops(stops, 'x')).toEqual([]);
+    expect(matchStops(stops, 'STUDENT tate', stops[0])[0].label).toBe(stops[0].name);
+    expect(matchStops(stops, 'x', stops[0])).toEqual([]);
     expect(knownStops(GEORGIA_AGENCY)).toHaveLength(608);
     expect(knownStops(PASSIO_UGA_AGENCY)).toHaveLength(114);
     expect(knownStops(PASSIO_ATHENS_AGENCY)).toEqual([]);
+  });
+  it('ranks matching stops by distance before capping the list', () => {
+    const near = { lat: 33.948, lon: -83.377 };
+    const stops = [6, 5, 4, 3, 2, 1, 0].map((offset, index) => ({
+      id: `${index}`, name: `Station ${index}`, lat: near.lat + offset * .001, lon: near.lon,
+    }));
+    expect(matchStops(stops, 'station', near).map(place => place.label)).toEqual([
+      'Station 6', 'Station 5', 'Station 4', 'Station 3', 'Station 2',
+    ]);
   });
   it('sends queries only in a no-store JSON body, uses a short memory cache and expires it', async () => {
     let now = 1000; const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(collection()));

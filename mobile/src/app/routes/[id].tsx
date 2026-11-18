@@ -87,7 +87,6 @@ function RouteDetails({ id }: { id: string }) {
     };
   }, [detail, direction]);
   const vehicles = useMemo(() => snapshot.vehicles.map(bus => ({ ...bus, color: safeColor(detail?.route.color ?? palette.green) })), [detail?.route.color, snapshot]);
-  const bus = vehicles.find(vehicle => vehicle.id === selectedBus);
 
   function openStop(stop?: Stop) {
     setSelectedStop(stop); setArrivals(undefined); setStopError('');
@@ -117,8 +116,8 @@ function RouteDetails({ id }: { id: string }) {
         <Text style={styles.muted}>{snapshot.source
           ? `${snapshot.source} · ${snapshot.saved ? 'Last received positions' : 'Refreshes every 15 seconds'}`
           : snapshot.pending ? 'Checking bus feeds…' : 'Bus feeds unavailable'}</Text>
-        {bus ? <Text style={styles.small}>Bus {bus.id} · {headingLabel(bus.heading)} · {vehicleAge(bus.updatedAt)}</Text> : null}
         {vehicles.map(vehicle => <Pressable key={vehicle.id} accessibilityRole="button" onPress={() => setSelectedBus(vehicle.id)}
+          accessibilityState={{ selected: vehicle.id === selectedBus }}
           style={[styles.card, styles.row, vehicle.id === selectedBus && { borderColor: palette.green }]}>
           <Text style={styles.label}>Bus {vehicle.id}</Text>
           <Text style={styles.small}>{headingLabel(vehicle.heading)} · {vehicleAge(vehicle.updatedAt)}{vehicleIsStale(vehicle) ? ' · Last known position' : ''}</Text>

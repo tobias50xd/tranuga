@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { journeyTransfers, rideGeometry } from '../../../../src/journey-map';
-import { matchStops, type Place } from '../../../../src/places';
+import { matchStops, nearestPlaces, type Place } from '../../../../src/places';
 import { parseCoordinate, planJourney, type Journey } from '../../../../src/planner';
 import { knownStops } from '../../../../src/replication';
 import type { Coordinate, Network, Stop, Vehicle } from '../../../../src/types';
@@ -20,24 +20,25 @@ const walkingLimits = [800, 1200, 2000];
 const startColor = palette.green;
 const endColor = palette.red;
 
-function PlaceField({ side, value, stops, center, disabled, onChange, onFocus, active }: {
-  side: Side; value: Endpoint; stops: Stop[]; center: Coordinate; disabled: boolean; active: boolean;
+function PlaceField({ side, value, stops, center, near, disabled, onChange, onFocus, active }: {
+  side: Side; value: Endpoint; stops: Stop[]; center: Coordinate; near: Coordinate; disabled: boolean; active: boolean;
   onChange: (value: Endpoint) => void; onFocus: () => void;
 }) {
-  const [addresses, setAddresses] = useState<Place[]>([]);
-  const [searchError, setSearchError] = useState('');
+  const [addressResult, setAddressResult] = useState<{ query: string; places: Place[]; failed?: boolean }>();
   const term = value.label.trim();
   const suggest = active && !value.point && term.length >= 2 && !/^[-+\d.\s,]+$/.test(term);
-  const local = useMemo(() => suggest ? matchStops(stops, term) : [], [stops, suggest, term]);
+  const local = useMemo(() => suggest ? matchStops(stops, term, near) : [], [stops, suggest, term, near]);
   const remote = suggest && term.length >= 3 && local.length < 3 && !local.some(item => item.label.toLocaleLowerCase() === term.toLocaleLowerCase());
+  const result = remote && addressResult?.query === term ? addressResult : undefined;
+  const suggestions = result?.places.length ? nearestPlaces([...local, ...result.places], near, 6) : local;
 
   useEffect(() => {
     if (!remote) return;
     const request = new AbortController();
     const timer = setTimeout(() => {
-      void placeSearch.search(term, center, request.signal).then(value => {
-        if (!request.signal.aborted) setAddresses(value);
-      }).catch(() => { if (!request.signal.aborted) setSearchError('Address search unavailable. Try a stop or the map.'); });
+      void placeSearch.search(term, center, request.signal).then(places => {
+        if (!request.signal.aborted) setAddressResult({ query: term, places });
+      }).catch(() => { if (!request.signal.aborted) setAddressResult({ query: term, places: [], failed: true }); });
     }, 500);
     return () => { clearTimeout(timer); request.abort(); };
   }, [remote, term, center]);
@@ -47,15 +48,15 @@ function PlaceField({ side, value, stops, center, disabled, onChange, onFocus, a
     <TextInput accessibilityLabel={endpointLabel[side]} editable={!disabled} autoCorrect={false} value={value.label}
       placeholder={side === 'origin' ? 'Stop, address, or coordinates' : 'Where are you going?'} placeholderTextColor={palette.muted}
       onFocus={onFocus} onChangeText={label => {
-        setAddresses([]); setSearchError('');
+        setAddressResult(undefined);
         onChange({ label, point: parseCoordinate(label) ?? undefined });
       }} style={styles.input} />
-    {suggest ? [...local, ...(remote ? addresses : [])].slice(0, 6).map(item => <Pressable key={item.id}
+    {suggestions.map(item => <Pressable key={item.id}
       accessibilityRole="button" onPress={() => { onChange({ label: item.label, point: item }); Keyboard.dismiss(); }} style={styles.card}>
       <Text style={styles.label}>{item.label}</Text>
       <Text style={styles.small}>{item.kind === 'stop' ? 'Bus stop' : item.detail}</Text>
-    </Pressable>) : null}
-    {remote && searchError ? <Text style={styles.small}>{searchError}</Text> : null}
+    </Pressable>)}
+    {result?.failed ? <Text style={styles.small}>Address search unavailable. Try a stop or the map.</Text> : null}
   </View>;
 }
 
@@ -202,13 +203,13 @@ function Planner() {
     <ScrollView ref={scroll} contentContainerStyle={styles.content} nestedScrollEnabled keyboardShouldPersistTaps="handled">
       <Heading kicker={agency.name} title="Plan a trip" />
       <View style={styles.card}>
-        <PlaceField side="origin" value={origin} stops={stops} center={center} active={focus === 'origin'} disabled={busy}
+        <PlaceField side="origin" value={origin} stops={stops} center={center} near={destination.point ?? center} active={focus === 'origin'} disabled={busy}
           onFocus={() => setFocus('origin')} onChange={value => update('origin', value)} />
         <View style={styles.row}>
           <Button label="My location" icon="locate-outline" busy={locating} disabled={busy} onPress={() => void locate()} />
           <Button label="Pick start" icon="pin-outline" disabled={busy} onPress={() => pick('origin')} />
         </View>
-        <PlaceField side="destination" value={destination} stops={stops} center={center} active={focus === 'destination'} disabled={busy}
+        <PlaceField side="destination" value={destination} stops={stops} center={center} near={origin.point ?? center} active={focus === 'destination'} disabled={busy}
           onFocus={() => setFocus('destination')} onChange={value => update('destination', value)} />
         <View style={styles.row}>
           <Button label="Pick destination" icon="pin-outline" disabled={busy} onPress={() => pick('destination')} />
@@ -225,7 +226,7 @@ function Planner() {
             primary={limit === value} disabled={busy} onPress={() => { setLimit(value); clearResult(); }} />)}
         </View>
       </View>
-      <Button label={busy ? 'Calculating route…' : 'Find quickest bus trip'} icon="navigate-outline" primary busy={busy}
+      <Button label={busy ? 'Calculating route…' : 'Find quickest bus trip'} icon="navigate-outline" primary busy={busy} routeLoading
         disabled={locating} onPress={() => void calculate()} />
       {error ? <Notice text={error} /> : null}
       {result ? <View style={[styles.card, { backgroundColor: palette.softGreen }]}>

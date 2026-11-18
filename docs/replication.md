@@ -64,7 +64,7 @@ Replicated Passio results for the catalog and planner query the three nodes conc
 
 ### Live positions on an open route
 
-[RouteVehicleTracker](../src/replication/route-vehicles.ts) checks the fleet endpoints that cover the selected route. The reviewed crosswalk maps route and bus IDs. Each feed's fleet is deduplicated before filtering to that route, so a current reassignment can supersede an old row. Every published map and vehicle list uses one endpoint's complete route snapshot. Stops, geometry, and arrivals still use the route-detail coordinator.
+[RouteVehicleTracker](../src/replication/route-vehicles.ts) checks the fleet endpoints for the selected route. It deduplicates each feed and resolves conflicting assignments across the full fleet before ranking feeds for that route. The reviewed crosswalk maps route and bus IDs. Matching provider IDs and fleet numbers also identify buses in the same verified Georgia fleet. Fresh reports take precedence, with fresh Athens InfoPoint assignments preferred over the UGA portal's city assignments. Each map and vehicle list uses positions from one endpoint. Stops, geometry, and arrivals still use the route-detail coordinator.
 
 The first probe starts when the route opens. The map can display its stops while positions load, and selects from the replies when the first probe finishes or after five seconds. After that, probes start five seconds before each 15-second map update. Slow reads can finish for a later update, and a pending endpoint request is reused. Probes bypass the in-browser live vehicle cache and honor the gateway's edge caching.
 

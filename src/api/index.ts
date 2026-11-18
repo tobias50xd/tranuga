@@ -53,7 +53,7 @@ export class TransitService {
   }
   async refreshVehicles(fresh = false): Promise<Vehicle[]> {
     const data = await this.client.get(this.agency.kind === 'uga' ? ugaEndpoints.buses : infoEndpoints(this.agency.restUrl!).visibleRoutes, 10000, 'json', fresh);
-    return normalizeVehicles(data, this.agency.kind === 'uga' ? 'uga' : 'infopoint');
+    return normalizeVehicles(data, this.agency.kind === 'uga' ? 'uga' : 'infopoint', undefined, this.agency.id);
   }
   async getMessages(): Promise<string[]> {
     return this.agency.kind === 'uga' ? [] : messages(await this.client.get(infoEndpoints(this.agency.restUrl!).messages, 60000));
@@ -105,7 +105,7 @@ export class TransitService {
     const stops = [...new Map([...normalizeStops(routeStopsRaw), ...normalizeStops(Array.isArray(row.Stops) ? row.Stops : []), ...uniqueStops(patterns)].map(s => [s.id, s])).values()];
     stops.forEach(s => this.cachedStops.set(s.id, s));
     if (!shape.length) warnings.push('Road trace unavailable; dashed stop connectors are approximate.');
-    const vehicles = includeVehicles ? normalizeVehicles([row], 'infopoint') : [];
+    const vehicles = includeVehicles ? normalizeVehicles([row], 'infopoint', undefined, this.agency.id) : [];
     return { route, patterns, stops, vehicles, departures: [...this.recentDepartures.values()].flat().filter(d => d.routeId === routeId), messages: messages(row.Messages), warnings: [...warnings, ...vehicleAgeWarnings(vehicles)] };
   }
   async getStop(stopId: string): Promise<StopDetail> {

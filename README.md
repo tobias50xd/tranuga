@@ -120,6 +120,8 @@ The footer on every view identifies this as **a student-based open source projec
 
 Maps retain **Leaflet + OpenStreetMap tiles**. Address suggestions use the keyless public [Photon demo](https://github.com/komoot/photon#readme), an OpenStreetMap geocoder that supports autocomplete. Stop hints first search the reviewed selected-network directory, supplemented by the existing transit stop-directory APIs; opening the planner does not require a full arrival crawl. Ohio and Georgia stop hints remain separate. A hint is a location, not evidence that buses are currently serving it.
 
+Both trip fields rank matching stops and addresses by straight-line distance to the other selected trip point. Before that point is selected, they use the network center. The ranking runs on the device, and Photon requests still use the network center.
+
 | Request | Exact contract and use |
 | --- | --- |
 | Browser `POST /api/places` | `Content-Type: application/json`; body `{"query":"Tate Student Center","lat":33.948,"lon":-83.377}`. Exactly these three keys; query 3–120 characters with no control characters; finite numeric latitude `[-90,90]`, longitude `[-180,180]`; upload at most 1 KiB; no URL parameters. |
@@ -350,7 +352,7 @@ The planner records the exact directed pattern and boarding visit on each ride l
 
 Each boarding after the first gets a numbered **purple ↔ transfer marker** and a “Change at” label in the itinerary. Shared-stop transfers use one marker; walking transfers mark the alighting and next boarding stops. Walking stays dashed. The camera fits the traveled segments and stops; a bus elsewhere on a selected line does not widen the view. Editing endpoints clears old trip lines, transfer markers and journey buses.
 
-The calculate button shows **Calculating route…** and an accessible indeterminate loading bar while feeds load and the journey is calculated. It returns to normal on success/failure; navigation removes the old progress UI. No percentage is invented. Inputs remain disabled during calculation, and reduced-motion users get a static busy bar. Normal notes stay below maps in collapsed dropdowns; full assumptions are also collapsed.
+The calculate button shows **Calculating route…** as a small bus drives across it while feeds load and the journey is calculated. It returns to normal when calculation finishes. Inputs remain disabled during calculation, and reduced-motion users see the bus parked. Normal notes stay below maps in collapsed dropdowns. Full assumptions are also collapsed.
 
 ### Route vehicle feeds and marker motion
 

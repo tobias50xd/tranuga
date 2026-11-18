@@ -1,6 +1,6 @@
 import type { Agency, Coordinate, Departure, Network, Route, RouteDetail, RoutePattern, Stop, StopDetail, Vehicle } from '../types';
 import { ApiClient } from './client';
-import { color, coordinate, decodePolyline, list, num, record, rows, text, timestamp, uniqueStops } from './normalize';
+import { color, coordinate, decodePolyline, list, num, record, rows, text, timestamp, uniqueStops, vehicleFleetIdentity } from './normalize';
 import { passioEndpoints, PASSIO_ORIGINS } from './passio-endpoints';
 import { uniqueVehicles } from '../vehicle-selection';
 
@@ -87,7 +87,7 @@ export function normalizePassioVehicles(value: unknown, agencyId: string): Vehic
       const heading = num(row.calculatedCourse) ?? num(row.course);
       // The observed response has only a local 12h time without date/offset. Request time is not GPS time.
       const updatedAt = utcTimestamp(row.updatedUtc) ?? timestamp(row.updatedAt) ?? timestamp(row.timestamp), outdated = text(row.outdated);
-      return [{ id, routeId, ...point, heading: heading === undefined ? 0 : ((heading % 360) + 360) % 360, updatedAt, active: outdated === '0' ? true : outdated === '1' ? false : undefined, destination: text(row.route, `Route ${routeId}`), tripId: text(row.tripId) || undefined }];
+      return [{ id, routeId, ...point, heading: heading === undefined ? 0 : ((heading % 360) + 360) % 360, updatedAt, active: outdated === '0' ? true : outdated === '1' ? false : undefined, destination: text(row.route, `Route ${routeId}`), tripId: text(row.tripId) || undefined, fleetIdentity: agencyId === '3994' ? vehicleFleetIdentity('uga-campus', id, row.busName) : undefined }];
     });
   });
   // A feed can retain an outdated point beside the current point for one bus.

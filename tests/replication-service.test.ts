@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../src/api/client';
+import { createTransitService, GEORGIA_AGENCY } from '../src/replication';
 import { ReplicatedTransitService, type TransitProvider } from '../src/replication/service';
 import { SnapshotStore, type StorageLike } from '../src/replication/store';
 import type { Network, Route, Stop } from '../src/types';
@@ -17,6 +18,39 @@ function memory(): StorageLike & { data:Map<string,string> } { const data=new Ma
 function replicated(services: TransitProvider[], store=new SnapshotStore(), clock=()=>now) { return new ReplicatedTransitService(agency, services.map((service,i)=>({id:String(i),label:`Source${i+1}`,priority:i,service})),undefined,store,clock,'replicas'); }
 
 describe('replicated crawling and public last-good snapshots',()=>{
+  it('shows an Athens bus only on its current InfoPoint route when the portal lists another assignment', async () => {
+    const fix = { latitude: 33.95, longitude: -83.37 };
+    const vehicleId = '756';
+    let infoAvailable = true;
+    const requestedAt = Date.now();
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/Buses')) {
+        return Response.json([
+          { ...fix, id: vehicleId, name: vehicleId, routeId: 1022, isAthensBus: true, lastUpdate: requestedAt },
+          { ...fix, id: '755', name: '755', routeId: 1022, isAthensBus: true, lastUpdate: requestedAt },
+        ]);
+      }
+      if (url.pathname.endsWith('/GetVisibleRoutes') && infoAvailable) {
+        return Response.json([{
+          RouteId: 26,
+          Vehicles: [{ ...fix, VehicleId: Number(vehicleId), Name: vehicleId, LastUpdated: requestedAt - 5000 }],
+        }]);
+      }
+      return new Response(null, { status: 503 });
+    });
+    const service = createTransitService(GEORGIA_AGENCY, new ApiClient(fetcher, ''));
+    const oldRoute = service.routeVehicleTracker('1022'), currentRoute = service.routeVehicleTracker('1026');
+    await Promise.all([oldRoute.probe(), currentRoute.probe()]);
+    expect(oldRoute.snapshot()).toMatchObject({ source: 'UGA portal', vehicles: [{ id: '755' }] });
+    expect(currentRoute.snapshot()).toMatchObject({ source: 'Athens GA · InfoPoint', vehicles: [{ id: 'infopoint:756' }] });
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/Buses'))).toHaveLength(1);
+
+    infoAvailable = false;
+    await Promise.all([oldRoute.probe(), currentRoute.probe()]);
+    expect(oldRoute.snapshot().vehicles.map(bus => bus.id)).toEqual(['756', '755']);
+    expect(currentRoute.snapshot().vehicles).toEqual([]);
+  });
   it('chooses different single endpoints on different routes, including an individual Passio mirror',async()=>{
     const portal=provider(), unavailable=provider(), mirror=provider();
     const bus=network.vehicles[0];
