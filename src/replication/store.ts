@@ -1,6 +1,6 @@
 export interface Snapshot<T> { at: number; value: T }
 export interface StorageLike { getItem(key: string): string | null; setItem(key: string, value: string): void }
-const KEY = 'tranuga.transit-replicas.v1';
+export const SNAPSHOTS_KEY = 'tranuga.transit-replicas.v1';
 const MAX_AGE = 24 * 60 * 60 * 1000;
 
 /** Last-good public transit responses only. No trip endpoints or user locations are stored. */
@@ -8,7 +8,7 @@ export class SnapshotStore {
   private entries = new Map<string, Snapshot<unknown>>();
   constructor(private storage?: StorageLike, private now = Date.now) {
     try {
-      const raw = storage?.getItem(KEY);
+      const raw = storage?.getItem(SNAPSHOTS_KEY);
       if (!raw || raw.length > 3_000_000) return;
       const data: unknown = JSON.parse(raw);
       if (!data || typeof data !== 'object' || (data as { version?: unknown }).version !== 1) return;
@@ -36,7 +36,7 @@ export class SnapshotStore {
         this.entries.delete(this.entries.keys().next().value!);
         data = JSON.stringify({ version: 1, entries: [...this.entries] });
       }
-      if (data.length <= 2_000_000) this.storage.setItem(KEY, data);
+      if (data.length <= 2_000_000) this.storage.setItem(SNAPSHOTS_KEY, data);
     } catch { /* In-memory replication continues when persistent storage is unavailable. */ }
   }
 }

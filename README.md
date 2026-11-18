@@ -1,443 +1,47 @@
-# tranuga
+# TranUGA
 
-A static bus explorer and quickest-trip estimator, deployed with GitHub Actions to Cloudflare Workers Static Assets. The browser lists routes, maps current stops and reported bus positions/headings, and computes directed bus journeys between named stops, addresses, map points or your location. Its visual design is original; APK layouts, artwork, assets and embedded keys are not build inputs.
-
-## Mobile apps
-
-TranUGA also runs on iOS and Android. The GitHub mobile workflow builds an Android APK and an iOS Simulator app, then publishes versioned release assets from mobile tags. An Apple-signed device package is available when release signing is configured. [Mobile builds and installation](mobile/README.md)
+TranUGA shows live buses, stop arrivals, and estimated transit trips. One React app in [app/](app/) runs on the web through React DOM and React Native Web, and on Android and iOS through React Native.
 
 ## Use the app
 
-- **Main menu:** switch **Dark mode** on/off and use **Route lock**, which is on by default. Both settings are remembered on this device.
-- **Routes:** star bus-line cards to pin active favorites first, followed by all other active routes, then inactive/unconfirmed routes. Inactive favorites keep their stars and stay in the inactive group. UGA has priority over city buses within each group. Active service has a light tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
-- **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Calculation shows an indeterminate loading bar. The result map draws only the ridden portions of the selected lines, marks transfer stops with a purple ↔ symbol, and refreshes their bus markers. Notes stay collapsed below the map.
-- **Data reliability** lets you inspect responding sources, disagreements, and saved data. An open route displays bus positions from one feed and names it under **On the road**. **Sync all sources** crawls the selected network's route, stop, and prediction data. The trip planner uses the replicated network, which requires two compatible Passio nodes for vehicle positions.
-- **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
-- **Map location:** press the crosshair **Show my location** button above the zoom controls on either map to show a blue position marker, its reported accuracy area, and center the map on yourself. It keeps your selected trip points and results.
-- **Networks:** choose the combined Georgia network, UGA Passio, Athens Public Transit in Ohio or a reviewed InfoPoint agency. Search the directory, locate a nearby agency or enter an authority code. Route lock follows the displayed route in any network.
+- **Routes** shows the network catalog, active-service filters, favorites, stops, arrivals, and live buses. The map shows each bus's heading inside a route-colored badge and uses grey for last-known positions.
+- **Plan** accepts stop names, addresses, decimal coordinates, map points, or your device location. Results include walking, waits, transfers, the ridden route segments, and estimated timing.
+- **Networks** lets you switch providers, search the agency directory, look up an authority code, and find nearby networks. It also contains Dark mode, data-source health, manual sync, and available provider details.
+- **Map controls** center on your device location on request. Route lock fits the selected route or journey and keeps part of it in view while you pan or zoom.
 
-All clock times use the device timezone except provider timetable clock labels, which retain the operator's stated IANA timezone. Missing dates, route identities and durations remain unknown rather than being invented.
+Live route maps check eligible feeds before a 15-second update and display one endpoint's fleet per route. The planner uses the shared directed transit graph, current predictions, and explicitly labeled estimates. [Feed selection and fallbacks](docs/replication.md)
 
-### Favorites and bus-line order
+## Run and test
 
-Use the **star** on a bus-line card to add/remove a favorite without opening the route. Favorite choices persist across reloads; only confirmed active favorites are pinned. Cards use this order:
-
-1. **Active favorites**, regardless of category, with UGA campus before city buses, then other networks.
-2. **All remaining active routes**, with UGA campus before city buses, then other networks.
-3. **All inactive/unconfirmed routes**, including favorites, with the same UGA → city → other ordering. Favorites receive no extra priority in this group.
-
-An active city route therefore precedes an inactive UGA favorite. A favorite moves to the pinned group when its service becomes confirmed active and returns to the inactive/unconfirmed group when service ends, keeping its saved star. Unconfirmed service retains its label and sorts before inactive service within the same operator. Route numbers sort naturally within matching groups. Search and **Active only** still apply to favorites.
-
-Operator labels use explicit UGA `isAthensBus`/selected-provider metadata, with reviewed aliases for older snapshots. Favorites are scoped by network kind, agency ID and native/canonical route ID, so equal IDs in Ohio and Georgia remain distinct. They are saved locally under `tranuga.favorites.v1`, capped at 500 entries. Blocked/full storage keeps session favorites usable; malformed saved entries are ignored. No account or location is needed. See [favorites.ts](src/favorites.ts) and [route-presentation.ts](src/route-presentation.ts).
-
-### Dark mode and route lock
-
-Both buttons are in the main navigation on desktop and mobile and expose their on/off state with `aria-pressed`.
-
-**Dark mode** changes the complete app palette: route/service cards, notes, forms, address hints, journey results, footer and map controls/popups. Leaflet/OpenStreetMap stays in use; a local CSS filter darkens only the map tile layer while preserving route and bus colors and the map attribution. On the first visit, the app follows the device's light/dark preference. An explicit choice is saved under `tranuga.theme.v1` (`light` or `dark`) and applied before the app renders through [public/theme.js](public/theme.js). Switching the palette preserves the current view and selected trip points.
-
-**Route lock starts on** and keeps navigation relative to the displayed route:
-
-- Zooming out stops at the overview that fits the whole selected route with 24 px of padding. The limit uses the actual map viewport and updates after resizing. Zooming in to individual stops remains available.
-- You can pan in every direction. At the overview, at least **50% of the route's horizontal and vertical extent** remains visible. At closer zoom levels, the overlap is half of the smaller of the route's extent and the viewport in each direction. These limits use the route's projected bounding rectangle, not a count of stops or percentage of polyline length.
-- A route detail uses its displayed geometry and stops; selecting a direction updates the bounds. A calculated trip uses only its displayed ride segments, walking connections and transfer stops. Unused lines and distant bus positions do not widen the overview.
-- Before a trip has been calculated, the planner map is free to explore and pick points. Editing a trip clears its previous bounds until a new trip is drawn. Missing route geometry also leaves navigation free.
-- Switching the lock on/off updates the existing map without refetching data or clearing the selected network, trip points, result or bus markers. Turning it off restores unrestricted panning and zooming out. All network choices, address hints and provider data remain available with either setting.
-
-The choice is saved under `tranuga.route-lock.v1` (`true`/`false`); a new or invalid preference defaults to locked. If the new key is absent, an existing `tranuga.athens-lock.v1` on/off choice supplies the initial value. Preferences contain no coordinates. If storage is unavailable, both menu controls still work for the current visit.
-
-### Your location on the map
-
-Both route-detail and trip-planner maps have a **Show my location** crosshair button. A press explicitly requests browser location permission, shows a blue dot and the browser's reported accuracy circle in meters when available, and centers the map on that position at street level (keeping a closer zoom if already selected). Press it again after panning to recenter; the marker and accuracy area update without duplicate markers. The blue dot represents the last requested position, not continuous tracking.
-
-If route lock prevents centering your position, this action turns the lock off, updates its menu/saved setting, and explains the change beside the button. You can turn route lock back on to restore route navigation limits. Locating yourself preserves the selected route, displayed journey, start and destination; the separate **My location** button beneath **Start** still fills the trip's starting point.
-
-The control shows a busy state during the request and explains denied permission, unavailable location and timeouts with a retry available. Each press makes one high-accuracy request with a 15-second timeout; the browser may reuse a fix up to 30 seconds old. Leaving a map discards any late reply. This control stores no coordinates and sends none to transit APIs; ordinary OpenStreetMap tile requests still reflect the viewed map area. The location helper is shared with the existing start-field and explicitly requested nearby-network lookup.
-
-### Application URLs
-
-The app uses browser-history routes and Cloudflare's single-page-app fallback, so these paths can be opened, refreshed and shared directly:
-
-| Path | View |
-| --- | --- |
-| `/routes` | Route catalog |
-| `/routes/{routeId}` | One route, its stops, trace and current buses |
-| `/plan` | Trip planner |
-| `/networks` | Network selector |
-
-Opening `/` replaces the address with `/routes`. Back/forward navigation restores the corresponding view without a full page reload.
-
-## Networks, replicas and identity
-
-The requested [Athens Passio website](https://athenstransit.passiogo.com/) is **Athens Public Transit, Ohio**, system **5842**. UGA and Athens-Clarke County are in **Georgia**. The official [UGA transit page](https://tps.uga.edu/transit/) links [routes.uga.edu](https://routes.uga.edu/), whose Passio system is **3994**. Ohio and Georgia have separate coordinators, map centers, ID scopes and saved snapshots.
-
-| Network | Sources used | Comparison scope |
-| --- | --- | --- |
-| UGA + Athens, Georgia | UGA portal, Athens InfoPoint authority `58`, UGA Passio `3994` | Reviewed campus aliases join UGA↔Passio; reviewed county aliases join UGA↔InfoPoint. At most two overlapping provider channels per reviewed route. |
-| UGA Passio | System `3994` on three fixed Passio nodes | Same operator and system across backend mirrors. |
-| Athens Public Transit, Ohio | System `5842` on three fixed Passio nodes | Same Ohio operator across backend mirrors; never a Georgia replica. |
-| Another InfoPoint authority, such as CATA | That authority's reviewed `RestUrl` | Independent selected network; no CATA/Georgia identity merge. |
-
-Passio nodes are `https://passiogo.com`, `https://replicated2of3.passiogo.com`, and `https://replicated3of3.passiogo.com`. A two-of-three result means **transport replica agreement**, not independent GPS measurements or guaranteed truth. The UGA portal and its overlapping providers also appear to share upstream data. Missing operator coverage abstains from comparison.
-
-The [reviewed crosswalk](src/data/athens-crosswalk.json) contains 35 route aliases, 608 stop aliases and 19 observed fleet aliases. It preserves route variants and source-native IDs. Current ordered stops proved 49 direction-pair matches and four conflicting city patterns. Similar names, nearby coordinates and numeric ID suffixes do not create new aliases. [Replication evidence](docs/replication-evidence.md) records the observations, inverted UGA city direction labels, stale static-coordinate anomalies and source hashes. [Replication behavior](docs/replication.md) explains selection and fallback rules.
-
-## Travel notes and service states
-
-Notes are **collapsed dropdowns**, placed after route maps and after the planner map. Short titles and regex-generated fragments replace long diagnostic sentences. Expand **Notes**, then **Full text** for every original provider/diagnostic message. Repeated warnings share a card; operator alerts stay distinct. Errors appear before warnings and information. A blocking request, point-selection or location error opens its dropdown so the next action remains visible. Icons and text convey meaning alongside color.
-
-| Class (`data-note-kind`) | Icon | Meaning and action |
-| --- | --- | --- |
-| `service` | Bus | Operator service update: read the original alert. |
-| `availability` | Warning triangle | Some routes lack confirmed service or usable stops and are excluded from planning. |
-| `backup` | Archive | Another source or a saved snapshot is being used; check its age. |
-| `freshness` | Clock | Old/unknown observation times: check bus update labels. |
-| `comparison` | Comparison squares | Sources disagree; unresolved stop order is excluded from planning. |
-| `estimate` | Calculator | Timing or walking is estimated; allow extra time. |
-| `connection` | Disconnected Wi-Fi | A request failed; retry and inspect source details. |
-| `action` | Map pin | Select the trip points or recover from a location error. |
-| `info` | Information circle | Additional context that does not imply an error. |
-
-Informational cards use a quiet green tone, warnings amber, and action/request errors red with `role="alert"`. The mapping lives in [notes.ts](src/notes.ts); it organizes messages for display without changing source status, service availability or planner decisions. Operator alert text is escaped and never rendered as HTML. Bus-line cards sort active favorites first, then other active routes, then inactive/unconfirmed routes including favorites, with UGA before city inside each group. Grey cards remain available for viewing route details, while the planner uses only eligible active service.
-
-[compact-note.ts](src/compact-note.ts) applies ordered, anchored regex rules to known messages; examples:
-
-| Input pattern / evidence | Compact fragment |
-| --- | --- |
-| `^Backup data in use: (sources) (is|are) unavailable` | `Backup · sources offline` |
-| `^(\d+) data disagreements? detected` | `N source conflicts · disputed stop order excluded` |
-| `Showing static stops` | `Static stops · service unconfirmed` |
-| `older than (two|2) minutes` / missing timestamp | `GPS >2 min / time unknown` |
-| `Transit request failed\s*\((\d{3})\)` | `HTTP 503 · retry` |
-| `Predictions unavailable at (N) stops` | `N stops · no ETA · estimated waits` |
-| Planner defaults and assumptions | `Fallback wait: 7.5 min`, `Transfer buffer: 45 s`, other original numeric limits |
-
-Operator service alerts bypass diagnostic substitutions and receive only conservative whitespace, punctuation and boilerplate cleanup; unmatched diagnostics use that same conservative cleanup. Route letters/IDs, negation (`no`, `not`, `until`), clock times, counts and cancellation/detour information are preserved. Regex processing changes presentation only; original text is escaped and retained under **Full text**, and service/planning decisions still use source data. Normal notes open only on request; expanded route notes retain their state during refresh.
-
-The footer on every view identifies this as **a student-based open source project, for development purposes only**, followed by **Vibe coded with ❤️ by Codex**. It also keeps the independent-service and estimated-time notices.
-
-## Address search and maps
-
-Maps retain **Leaflet + OpenStreetMap tiles**. Address suggestions use the keyless public [Photon demo](https://github.com/komoot/photon#readme), an OpenStreetMap geocoder that supports autocomplete. Stop hints first search the reviewed selected-network directory, supplemented by the existing transit stop-directory APIs; opening the planner does not require a full arrival crawl. Ohio and Georgia stop hints remain separate. A hint is a location, not evidence that buses are currently serving it.
-
-Both trip fields rank matching stops and addresses by straight-line distance to the other selected trip point. Before that point is selected, they use the network center. The ranking runs on the device, and Photon requests still use the network center.
-
-| Request | Exact contract and use |
-| --- | --- |
-| Browser `POST /api/places` | `Content-Type: application/json`; body `{"query":"Tate Student Center","lat":33.948,"lon":-83.377}`. Exactly these three keys; query 3–120 characters with no control characters; finite numeric latitude `[-90,90]`, longitude `[-180,180]`; upload at most 1 KiB; no URL parameters. |
-| Fixed upstream `GET https://photon.komoot.io/api/` | Query `q={encodedQuery}&lat={latitude}&lon={longitude}&limit=5&lang=en`. Coordinates bias relevance toward the selected network; they do not impose a service boundary. Returns GeoJSON `FeatureCollection`, with Point coordinates **`[longitude, latitude]`**. Only valid named/address points become hints. |
-
-```sh
-# Through the local Worker; address text stays out of the browser request URL.
-curl -fsS 'http://localhost:8787/api/places' \
-  -H 'Content-Type: application/json' \
-  --data '{"query":"Tate Student Center","lat":33.948,"lon":-83.377}'
-
-# Same public upstream contract, directly:
-curl -fsS 'https://photon.komoot.io/api/?q=Tate%20Student%20Center&lat=33.948&lon=-83.377&limit=5&lang=en'
-```
-
-The input waits **500 ms**, requires at least three characters for address requests, cancels superseded searches, and rejects stale replies. Two characters can show local stops. An exact local stop match or three or more local stop hits avoids an address request. At most five local and five provider candidates are considered, with eight displayed. A 50-entry, five-minute memory cache avoids repeated lookups in the current tab; queries/addresses are not written to localStorage or the transit snapshot store. Typing sends the query and the network center to Photon after the pause; selecting **My location** does not change that search bias. The Worker forwards no caller credentials, rejects redirects, caps upstream waits at six seconds and responses at 256 KiB, validates the JSON envelope, and returns `no-store` without edge caching. Upstream still receives the search text in its own query URL. The app does not log request bodies. Keyboard navigation, Escape/Tab dismissal and explicit selection keep text and coordinates consistent.
-
-The UI credits Photon and OpenStreetMap. Photon's public demo permits reasonable use, may throttle/ban excessive use and has no availability guarantee; use a managed or self-hosted geocoder before substantial traffic. Local stop hints and map picking remain available during an address-service outage. See [Photon API documentation](https://github.com/komoot/photon/blob/master/docs/api-v1.md). OpenStreetMap's public Nominatim service is not used for autocomplete because its [usage policy forbids it](https://operations.osmfoundation.org/policies/nominatim/).
-
-### Website costs
-
-There is no map API key or paid map SDK in this implementation. As checked on November 13, 2026, [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) lists free unlimited static-asset requests and a free Worker quota of 100,000 requests/day with 10 ms CPU per invocation. Transit/address gateway calls consume Worker requests, including edge-cache hits. Low traffic can fit the free plan; polling, replicated feeds and full network crawls generate multiple calls per visitor. Workers Paid starts at $5/month, with additional usage charges above its allowances. A custom domain and a future managed/self-hosted geocoder may add costs. OSM tiles and Photon remain subject to their provider usage policies, so these limits do not promise free hosting at arbitrary traffic.
-
-## Run locally
-
-Use Node.js **22.12+** and npm; install the locked dependencies:
+Use Node.js 22 or newer and install both locked packages.
 
 ```sh
 npm ci
-npm run build
-npm run dev:edge
+npm ci --prefix app
+npm run dev                 # Build the website and serve it with the local gateway
+npm --prefix app run android
+npm --prefix app run ios    # macOS with Xcode and CocoaPods
 ```
-
-Open Wrangler's URL, normally **http://localhost:8787**. It serves the production static build and API gateway. Rebuild after source edits. For hot reload, keep Wrangler running and start `npm run dev` in another terminal; Vite normally serves **http://localhost:5173** and proxies `/api` to port 8787. `npm run preview` alone does not supply the gateway.
-
-## GitHub Actions → Cloudflare
-
-[.github/workflows/deploy.yml](.github/workflows/deploy.yml) verifies pull requests and deploys successful pushes to `main`, or manual runs on `main`, to **Cloudflare Workers Static Assets**. Static files and the small read-only gateway deploy together; no database or SSR is required.
-
-1. Configure a Cloudflare account and `workers.dev` subdomain.
-2. Create an account-scoped **Edit Cloudflare Workers** API token.
-3. Add GitHub Actions secrets **`CLOUDFLARE_API_TOKEN`** and **`CLOUDFLARE_ACCOUNT_ID`** to the repository or its `production` environment.
-4. Push to `main`; inspect **Test and deploy to Cloudflare** and the successful Wrangler deployment URL.
-
-CI runs types, deterministic tests, a production build, desktop/mobile browser checks and a Wrangler bundle dry run before the deployment job. Credentials belong in GitHub Actions secrets, never frontend variables or source files. The site is hosted at **[tranuga.tobias-seeanner.workers.dev](https://tranuga.tobias-seeanner.workers.dev)**. The baseline [GitHub Actions run](https://github.com/tobias50xd/tranuga/actions/runs/43353286621) completed both verification and deployment successfully. Check the latest action for the revision currently deployed; build/test/dry-run success alone does not establish publication.
-
-[Deployment instructions](docs/deployment.md) cover account setup, gateway policy, headers, cache behavior, custom domains and rollback. See Cloudflare's [Static Assets](https://developers.cloudflare.com/workers/static-assets/) and [GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/) documentation for the hosting/authentication model.
-
-## Static frontend and restricted gateway
-
-Vite produces `dist/` containing HTML, JavaScript, CSS, Leaflet and a self-hosted font. Maps, UI state and the independent journey algorithm run in the browser. The Worker serves a same-origin `/api?url={encodedUpstreamURL}` gateway because UGA/CloudFront omit browser CORS headers and the original agency directory uses HTTP.
-
-The transit gateway permits the documented **GET** endpoints and narrowly defined **read-only Passio POST** bodies. A separate fixed-destination **POST `/api/places`** endpoint supplies address suggestions, as documented above. The transit gateway is not a general proxy: origins, paths, query keys, methods, system IDs and JSON body fields are validated against committed policy. Caller cookies/credentials are not forwarded, redirects are rejected, and arbitrary hosts, write actions, device registration, feedback and account APIs are excluded. Limits are 12 seconds upstream, 8 MiB response data and 8 KiB POST data. Successful JSON/KML is validated before use. Passio POST cache keys include a digest of the canonical validated body, keeping systems and actions separate.
-
-The 73 reviewed InfoPoint roots are in [authorities.json](src/data/authorities.json); runtime discovery cannot grant a new host access. The legacy discovery hop remains HTTP because its HTTPS certificate failed validation during the original probe; TLS verification is never disabled. Browser-to-production requests remain HTTPS.
-
-## Complete API inventory: 33 patterns
-
-These are the **33 transit patterns**. The additional address-search request is fully specified in [Address search and maps](#address-search-and-maps), for **34 external API patterns in total**.
-
-The original 22 bus-data patterns remain integrated; Passio adds 11 read-query patterns. Calls have actual catalog, map, stop, planning or provider-tool uses. They are selected by feature and network, not all issued at initial page load. No bus API key, login cookie or bearer token is required by the observed contracts. IDs are discovered from responses; the examples below are dated observations, not universal constants.
-
-Bases and POST body templates:
-
-- `U = https://my.uga.edu/v4_19/cache`; `S = https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data`.
-- `D = http://mobilegateway.rideralerts.com/gateway/TransitAuthorities`.
-- `I = {authority.RestUrl}`; Georgia example: `https://bustracker.accgov.com/InfoPoint/rest`; CATA example: `https://realtime.catabus.com/InfoPoint/rest`.
-- `P` is one of the three fixed Passio HTTPS origins above; `sid` is string `5842` or `3994`.
-- Passio `R = {"systemSelected0":"{sid}","amount":1}`; `B = {"s0":"{sid}","sA":1}`; `A = {"systemSelected0":"{sid}","amount":1,"routesAmount":0}`. These are JSON request bodies with `Content-Type: application/json`.
-
-| # | Method | URL, query and body | Actual application use |
-| --- | --- | --- | --- |
-| 1 | GET | `U/Routes` | Complete UGA/county catalog, names, colors and reported current-service flags. |
-| 2 | GET | `U/Buses` | Bus positions/headings, original update times, route association and refresh. |
-| 3 | GET | `U/routeTracking_{routeId}` | Current ordered stops/directions, predictions and network planning. |
-| 4 | GET | `U/stop_{stopId}` | Selected-stop arrivals; county IDs can have a `c` prefix. |
-| 5 | GET | `S/version.json` | Static dataset version checking. |
-| 6 | GET | `S/busData.json` | Static stops, route/trip mappings, road shapes and loop evidence. |
-| 7 | GET | `D` | InfoPoint agency directory and selected `RestUrl`. |
-| 8 | GET | `D/Locate?Lat={lat}&long={lon}` | Explicit nearby-agency lookup; lowercase `long`. |
-| 9 | GET | `D/?includeHiddenPropertyCode=%40{code}` | Authority-code selector; not an authentication token. |
-| 10 | GET | `I/TransitAuthorityConfig/Get` | Agency configuration and approved geometry location. |
-| 11 | GET | `I/Routes/GetAllRoutes` | Full selected-agency catalog and embedded vehicles. |
-| 12 | GET | `I/Routes/GetVisibleRoutes` | Publication/visibility set, embedded buses and route messages. |
-| 13 | GET | `I/RouteDetails/Get/{routeId}` | Selected route, directions, stops, trace filename and vehicles. |
-| 14 | GET | `I/RouteDetails/GetAllRouteDetails` | Full directed topology for network planning. |
-| 15 | GET | `I/RouteDetails/GetDirectionsByRouteID/{routeId}` | Valid native direction codes. |
-| 16 | GET | `I/RouteDetails/GetStopsForRouteDirection/?routeid={routeId}&direction={direction}&timepointsOnly=false` | Direction stop metadata; ordered `RouteStops.SortOrder` remains authoritative. |
-| 17 | GET | `I/Stops/GetAllStops` | Network stop names/coordinates. |
-| 18 | GET | `I/Stops/GetAllStopsForRoutes?routeIDs={commaSeparatedRouteIds}` | Selected route's served-stop set. |
-| 19 | GET | `I/Stops/Get/{stopId}` | Current selected-stop details. |
-| 20 | GET | `I/StopDepartures/Get/{stopId}` | ETA/EDT, schedule/run identity and original update times. |
-| 21 | GET | `I/PublicMessages/GetCurrentMessages` | Public service notices as safely rendered text. |
-| 22 | GET | `{config.BaseUrl}{config.KmlUrl}{encodedTraceFilename}` | Approved KML `LineString` road geometry. |
-| 23 | POST | `P/mapGetData.php?getRoutes=1`; body `R` | Passio variants/catalog; explicit UGA group membership. |
-| 24 | POST | `P/mapGetData.php?getStops=2&withOutdated=1&wBounds=1&showBusInOos=0`; body `B` | Ordered variant stops, return visits, groups and separate trace segments. |
-| 25 | POST | `P/mapGetData.php?getBuses=1&speed=1`; body `B` | Public fleet bus IDs, positions/headings and lightweight refresh. |
-| 26 | GET | `P/mapGetData.php?eta=3&stopIds={commaSeparatedStopIds}&userId={sid}` | Selected-stop/route arrivals and full-network batches, at most 40 stop IDs. Optional reviewed selectors: `routeId`, `position`. |
-| 27 | POST | `P/goServices.php?getAlertMessages=1&alertCRC=na&noOptions=1`; body `A` | Public Passio service messages. |
-| 28 | GET | `P/mapGetData.php?getSystems=2&sortMode=1&credentials=1&acronymId={sid}` | Provider information; only the verified agency's normalized metadata is exposed. |
-| 29 | GET | `P/goServices.php?goWebVer=1` | Provider website software version. |
-| 30 | POST | `P/mapGetData.php?getRoutes=2&sortMode=1&credentials=1`; body `R` | Provider route groups, names, variants and supplied stop counts. |
-| 31 | GET | `P/mapGetData.php?schedule=4&routeId={variantId}&stopId={stopId}` | Explicit provider timetable with operator timezone and undated clock labels. |
-| 32 | POST | `P/mapGetData.php?getBuses=2&search={encodedQuery}`; body `B` | Explicit bus-number/name lookup; 1–40 letters, digits, spaces, underscores or hyphens. |
-| 33 | POST | `P/mapGetData.php?walk=2`; body `W` below | Explicit, separate operator transit comparison; never changes the local planner result. |
-
-Body `W` contains exactly two points and the selected system:
-
-```json
-{"systems":{"systemSelected0":"5842","amount":1},"routes":{"amount":0},"points":[{"lat":39.295665,"lng":-82.11205},{"lat":39.325428,"lng":-82.101967}],"mode":"transit"}
-```
-
-The `credentials=1` selectors above are public query flags, not authorization credentials. Passio's native website uses a form field named `json`; direct probes also confirmed these minimal JSON POST bodies. The application and gateway use the validated JSON contracts.
-
-[feature.md](feature.md) lists future possibilities for every pattern. [Original extraction evidence](docs/api-extraction.md) preserves the initial APK call-site/authentication findings; [Passio extraction and contracts](docs/passio-api.md) covers the public website requests. [API validation](docs/api-validation.md) separates dated live observations from deterministic test scope.
-
-### Reproduce the original APIs
 
 ```sh
-curl -fsS 'https://my.uga.edu/v4_19/cache/Routes'
-curl -fsS 'https://my.uga.edu/v4_19/cache/Buses'
-curl -fsS 'https://my.uga.edu/v4_19/cache/routeTracking_5750'
-curl -fsS 'https://my.uga.edu/v4_19/cache/stop_155104'
-curl -fsS 'https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/version.json'
-curl -fsS 'https://d1dhvjc4b8xlgl.cloudfront.net/mobile-bus-data/busData.json'
-curl -fsS 'http://mobilegateway.rideralerts.com/gateway/TransitAuthorities'
-curl -fsS 'http://mobilegateway.rideralerts.com/gateway/TransitAuthorities/Locate?Lat=33.95&long=-83.37'
-curl -fsS 'http://mobilegateway.rideralerts.com/gateway/TransitAuthorities/?includeHiddenPropertyCode=%40CATA'
-
-rest_base='https://realtime.catabus.com/InfoPoint/rest'
-curl -fsS "$rest_base/TransitAuthorityConfig/Get"
-curl -fsS "$rest_base/Routes/GetAllRoutes"
-curl -fsS "$rest_base/Routes/GetVisibleRoutes"
-curl -fsS "$rest_base/RouteDetails/Get/51"
-curl -fsS "$rest_base/RouteDetails/GetAllRouteDetails"
-curl -fsS "$rest_base/RouteDetails/GetDirectionsByRouteID/51"
-curl -fsS "$rest_base/RouteDetails/GetStopsForRouteDirection/?routeid=51&direction=EB&timepointsOnly=false"
-curl -fsS "$rest_base/Stops/GetAllStops"
-curl -fsS "$rest_base/Stops/GetAllStopsForRoutes?routeIDs=51"
-curl -fsS "$rest_base/Stops/Get/1"
-curl -fsS "$rest_base/StopDepartures/Get/1"
-curl -fsS "$rest_base/PublicMessages/GetCurrentMessages"
-curl -fsS 'https://realtime.catabus.com/InfoPoint/Resources/Traces/Route51.kml'
+npx playwright install chromium
+npm run check
 ```
 
-### Reproduce all eleven Passio patterns
+The browser checks run against the exported shared app with mocked transit providers. The native workflow builds the same screens into Android and iOS packages. [Deploy, download, and sign builds](docs/deployment.md)
 
-These examples use the observed Ohio system and public stop coordinates. Substitute `3994` and IDs discovered from its responses for UGA. Each request can use either replica origin instead of the primary.
+## Where to make changes
 
-```sh
-passio_origin='https://passiogo.com'
-curl -fsS "$passio_origin/mapGetData.php?getRoutes=1" \
-  -H 'Content-Type: application/json' --data '{"systemSelected0":"5842","amount":1}'
-curl -fsS "$passio_origin/mapGetData.php?getStops=2&withOutdated=1&wBounds=1&showBusInOos=0" \
-  -H 'Content-Type: application/json' --data '{"s0":"5842","sA":1}'
-curl -fsS "$passio_origin/mapGetData.php?getBuses=1&speed=1" \
-  -H 'Content-Type: application/json' --data '{"s0":"5842","sA":1}'
-curl -fsS "$passio_origin/mapGetData.php?eta=3&stopIds=190923%2C190985&userId=5842"
-curl -fsS "$passio_origin/goServices.php?getAlertMessages=1&alertCRC=na&noOptions=1" \
-  -H 'Content-Type: application/json' --data '{"systemSelected0":"5842","amount":1,"routesAmount":0}'
-curl -fsS "$passio_origin/mapGetData.php?getSystems=2&sortMode=1&credentials=1&acronymId=5842"
-curl -fsS "$passio_origin/goServices.php?goWebVer=1"
-curl -fsS "$passio_origin/mapGetData.php?getRoutes=2&sortMode=1&credentials=1" \
-  -H 'Content-Type: application/json' --data '{"systemSelected0":"5842","amount":1}'
-curl -fsS "$passio_origin/mapGetData.php?schedule=4&routeId=66949&stopId=190923"
-curl -fsS "$passio_origin/mapGetData.php?getBuses=2&search=2100" \
-  -H 'Content-Type: application/json' --data '{"s0":"5842","sA":1}'
-curl -fsS "$passio_origin/mapGetData.php?walk=2" \
-  -H 'Content-Type: application/json' \
-  --data '{"systems":{"systemSelected0":"5842","amount":1},"routes":{"amount":0},"points":[{"lat":39.295665,"lng":-82.11205},{"lat":39.325428,"lng":-82.101967}],"mode":"transit"}'
-```
-
-## Replication, caching and privacy
-
-The browser coordinator fetches configured sources concurrently, validates normalized responses, merges reviewed identities, and saves bounded last-good **public transit** snapshots. Replicated data uses pairwise-compatible groups and accepts one vote per source. Fresh data takes precedence over saved snapshots. Replicated Passio vehicle data for planning and catalog activity requires a fresh two-of-three location quorum. An open route selects a single endpoint for its displayed fleet, including an individual Passio node when eligible. Both paths collapse duplicate canonical buses and preserve the coordinates, headings, and original timestamps of concrete source observations.
-
-| Comparison | Rule |
+| Path | Owns |
 | --- | --- |
-| Replicated vehicle agreement | Same canonical fleet/route identity and position ≤100 m. If both reports are dated, their measurements must be within 60 s. A vote needs an original measurement no older than 120 s and no more than 60 s in the future, or a Passio record explicitly marked `outdated=0`. Only dated measurements can establish planning service. Passio requires two compatible replica votes for replicated output. |
-| Stop agreement | Reviewed identity and position within 50 m; a nearby unreviewed stop stays separate. |
-| ETA/EDT agreement | Comparable stop/route/direction/run, each arrival and boarding/departure difference ≤90 s. Ambiguous unidentified predictions abstain in both directions. A known run's outlier remains disagreement on one departure, not an extra bus. |
-| Topology agreement | Complete ordered canonical stop sequence and compatible loop evidence. Unknown closure abstains; conflicting known closure without a majority excludes that pattern from planning. Extra variants stay separate. |
-| Current service | UGA current-service flags differ from InfoPoint/Passio publication flags. Visibility does not outvote current inactivity. A publication-only route enters planning only with a fresh vehicle or credible nonscheduled ETA carrying an original update time ≤180 s. |
+| [app/src/app/](app/src/app/) | Shared screens and navigation |
+| [app/src/components/](app/src/components/) | Shared UI, theme, map annotations, and the map renderer for each platform |
+| [src/](src/) | Transit APIs, feed selection, topology, and trip calculations |
+| [worker/](worker/) | Cloudflare gateway, including upstream request policy and caching |
+| [tests/](tests/) | Planner, provider, gateway, and browser tests |
 
-The source bar reports health and corroborated/single-source/conflict/saved-backup states. Replica agreement can share one underlying error; it does not guarantee that a bus exists at the displayed coordinate.
+Change shared screens and components for features and visual updates. Keep platform code in the map renderers and device integration where the browser and native APIs differ. The web URLs are `/routes`, `/routes/{routeId}`, `/plan`, and `/networks`.
 
-| Layer/work | Retention and trigger |
-| --- | --- |
-| Client request cache | Coalesced identical requests; 15 s default, 15 s timeout; endpoint-specific longer TTLs. |
-| Last-good snapshots | Browser localStorage key `tranuga.transit-replicas.v1`; at most 64 resource slots, a 2,000,000-character serialized persistence cap, and 24 h maximum static snapshot age. Unavailable/full storage falls back to memory. |
-| Saved live eligibility | Cached active flags/predictions expire after 2 min; non-quorum provider positions can remain visible for at most 5 min, while three-node Passio positions still require a fresh two-replica quorum. Original measurement age still controls current-service eligibility. Original measurement times and selected `snapshotAt` survive nested replication. Static retention does not authorize stale service. |
-| Initial catalog | Fetch catalogs and vehicles concurrently before displaying route cards. Fresh absolute vehicle evidence can confirm publication-only routes; an unavailable vehicle feed leaves the catalog usable with unconfirmed status. No topology/arrival crawl is needed. |
-| Visible-tab lightweight crawl | The catalog and planner check catalogs, vehicles, and alerts every 60 s to update route activity and source health. |
-| Map startup and positions | Route maps start a position probe alongside their stops and geometry, then check eligible feeds five seconds before each 15-second update. The planner requests replicated positions on opening and refreshes them every 15 s for a completed trip. These reads coalesce in-flight work. Route probes and initial planner reads bypass the short browser cache. Hidden tabs skip new map polls, and replies from previous views cannot update the map. |
-| Full network crawl | **Sync all sources** or planning; the adapter first loads the complete route catalog and ordered topology for every returned route, then fetches current vehicles and batched stop predictions. UGA tracking/InfoPoint departures and Passio ETA batches are capped at four concurrent requests; each Passio batch has at most 40 stops. The three mirror adapters run concurrently. |
-| Edge response cache | Most live reads 10 s; Passio catalog 60 s; static/config/directory/topology/KML/provider metadata/timetable 1 h. Full per-layer policy is in [feature.md](feature.md). |
+[Provider contracts](docs/api-extraction.md) · [Passio contracts](docs/passio-api.md) · [API validation](docs/api-validation.md)
 
-There is no server cron or crawl while the browser is closed. Local trip planning runs on the device. **Request provider comparison** explicitly forwards the two selected points to Passio; that request bypasses client/edge caches and localStorage snapshots, and coordinate bodies are not written to the request log. Geolocation otherwise runs only after the user requests it; nearby-network lookup also explicitly forwards a coordinate to discovery. No account, analytics SDK or continuous location tracking is implemented. Public map tiles still make ordinary requests to OpenStreetMap.
-
-## How quickest-trip estimation works
-
-[src/planner.ts](src/planner.ts) runs a time-dependent earliest-arrival search with a binary heap and nondominated arrival/transfer/walking labels. Planning follows this sequence:
-
-1. Query the complete route catalog and retain every usable directed stop pattern instead of preselecting a single line.
-2. Build the connection graph from ordered stops. Routes connect directly at the same canonical stop; an optional transfer edge may walk up to 300 m between distinct nearby stops.
-3. Limit usable edges to current service. Catalog-active lines qualify directly; a line with a stale catalog flag may qualify from a fresh vehicle or a fresh nonscheduled ETA. Saved/stale observations do not establish service.
-4. Rank every reachable one-line and multi-line journey by arrival time. Stop ETAs/EDTs provide run anchors. When an ETA is absent, a bus observed within 600 m of the directed stop chain can estimate when it reaches the boarding stop; buses that already passed a non-loop stop are ignored. The declared 7.5-minute service estimate remains the final fallback.
-
-The search considers **all** reachable boarding and alighting stops, directed rides, same-stop/walking transfers, catchable predicted runs, recent vehicle positions and modeled following service. It requires at least one bus ride. Remaining on a bus does not add a second boarding wait; confirmed loops can wrap once. Conflicting topology and unconfirmed current service cannot supply planning edges. When a current route-stop request fails, a verified ordered static pattern can still supply topology, but its timing remains explicitly estimated or vehicle-assisted.
-
-| Parameter | Default |
-| --- | --- |
-| Walking speed | 1.3 m/s; straight-line distances |
-| Access/egress walk | 1,200 m each; UI offers 800 / 1,200 / 2,000 m |
-| Transfer walk | 300 m; walks cannot chain to bypass access limits |
-| Estimated bus movement | 5.6 m/s plus 20 s per stop |
-| Estimated following service | 450 s after readiness or latest known departure, whichever is later |
-| Transfer buffer | 45 s |
-| Prediction age / search horizon | 180 s / 3 h |
-
-Consistent route geometry estimates bus distance; otherwise stop distances are multiplied by 1.25. Actual run identity can anchor downstream arrivals and intermediate dwell. UGA stop prediction arrays do not identify every run, so matching array positions never prove the same bus. Expired/impossible predictions, old original update times, stale vehicle positions and stale network snapshots are ignored. Tests compare the search with an independent exhaustive-path oracle on 40 generated networks and separately cover vehicle-position timing.
-
-The result is **quickest within this declared model**, with `estimated` or `live-assisted` confidence and visible assumptions. The feeds do not provide complete guaranteed timetables, a pedestrian street graph or accessible-path data. Provider timetable labels do not supply dates. Operator journey comparisons are separate suggestions, use only explicit numeric timing, exclude driving alternatives and do not become a quorum proof of the local algorithm. The result map draws only the selected boarding-to-alighting segments and transfer stops, as described below.
-
-### Journey map, transfer stops and calculation progress
-
-The planner records the exact directed pattern and boarding visit on each ride leg. [journey-map.ts](src/journey-map.ts) selects that variant and clips its trace to the ridden stop sequence. Unused route tails, other variants and unrelated lines are omitted. Ordered loop wrapping is supported, and multipart trace gaps remain separate polylines. Trace matching requires stops within 100 m and a consistent directed order/distance; missing, reversed, unrelated or ambiguous geometry falls back to **dashed connectors through only the used stops**. This remains a schematic display where road geometry is unavailable.
-
-Each boarding after the first gets a numbered **purple ↔ transfer marker** and a “Change at” label in the itinerary. Shared-stop transfers use one marker; walking transfers mark the alighting and next boarding stops. Walking stays dashed. The camera fits the traveled segments and stops; a bus elsewhere on a selected line does not widen the view. Editing endpoints clears old trip lines, transfer markers and journey buses.
-
-The calculate button shows **Calculating route…** as a small bus drives across it while feeds load and the journey is calculated. It returns to normal when calculation finishes. Inputs remain disabled during calculation, and reduced-motion users see the bus parked. Normal notes stay below maps in collapsed dropdowns. Full assumptions are also collapsed.
-
-### Route vehicle feeds and marker motion
-
-Each open route picks the feed with the best current coverage, using timestamps, plausible movement, and comparisons with nearby-in-time reports as evidence of quality. Different routes can pick different feeds. If the selected feed starts reporting grey buses, the next 15-second refresh can replace its entire fleet with a better feed that was checked in advance. The active feed appears under **On the road**. [Route feed selection and fallback rules](docs/replication.md#live-positions-on-an-open-route).
-
-Compact bus icons use the line color with a rotating heading pointer. Grey identifies last-known or unconfirmed positions. Passio's explicit current flag can color a clock-only fix, whose age still reads **Update time unavailable**. [vehicle-motion.ts](src/vehicle-motion.ts) eases the marker between accepted fixes and varies the duration with estimated speed. Planning, storage, update ages, and service decisions use the original observations.
-
-| Guard | Display policy |
-| --- | --- |
-| Fresh, increasing observation times from the same feed and route | Ease toward the accepted fix for at most **3.6 s**, with shorter transitions for faster buses and shortest-angle heading rotation. |
-| Consecutive provider-current clock-only fixes from the same feed and route | Use the receipt interval to pace the display. The GPS measurement age remains unknown. |
-| Distance from the latest accepted GPS fix | At most **20 m** throughout the tween; larger moves first catch up to within that cap. |
-| Observations more than 60 s apart, movement >120 m, or implied speed >25 m/s | Snap to the received position. |
-| Unconfirmed time, stale time (>2 min), time >1 s in the future, saved fallback, or route or feed change | Snap to the accepted fix. |
-| Repeated cached fix / out-of-order timestamp | Keep the current tween while accepting updated metadata / ignore the older fix, except a provider-current report replacing an explicitly outdated point (snap). |
-| Reduced motion / hidden page / removed map | Snap or finish at the known fix; cancel animation frames and listeners. |
-
-Markers stop at the latest accepted fix. The 20 m cap measures display lag from that fix. Provider GPS error and network delay still affect how closely the dot matches the bus's actual position. The short animation follows a straight line between the displayed and accepted points, so it can cut across a corner within that cap. Each map discards its animation state on navigation.
-
-## Tests and verification
-
-```sh
-npm run typecheck
-npm test
-npm run build
-npx playwright install --with-deps chromium
-npm run test:e2e
-npx wrangler deploy --dry-run --outdir /tmp/tranuga-worker
-```
-
-`npm run check` runs deterministic tests, the production build/types and browser tests. Browser tests use production `dist/` assets, realistic bounded fixtures, desktop/mobile viewports, rebased prediction times and blocked external map tiles. These tests prove behavior against captured contracts, not future operator uptime or a live deployment.
-
-| Test file | Scope |
-| --- | --- |
-| [api.test.ts](tests/api.test.ts) | Original 22 endpoint workflows, schemas, timing, topology, fallbacks and client behavior. |
-| [passio.test.ts](tests/passio.test.ts) | All 11 Passio patterns, both systems, mirrors, variants/geometry, prediction parsing and four provider tools. |
-| [crosswalk.test.ts](tests/crosswalk.test.ts) | Reviewed route/stop/fleet aliases, operator boundaries and UGA `directionId` regression. |
-| [replication-merge.test.ts](tests/replication-merge.test.ts) | Majority/outlier selection, provenance, freshness, ambiguous predictions, current service, loops, conflicts and nested-cache rules. |
-| [replication-service.test.ts](tests/replication-service.test.ts) | Concurrent crawling, schema/storage guards, persistent fallback, bounded retention and nested coordinator health. |
-| [planner.test.ts](tests/planner.test.ts) | Directed journeys, loops, transfers, ETA/EDT, arbitrary/geolocation coordinates, stale/unreachable cases and independent oracle. |
-| [worker.test.ts](tests/worker.test.ts) | Approved GET/POST contracts, payload limits, system separation, origin/method validation, proxy/caching failures and comparison privacy. |
-| [journey-map.test.ts](tests/journey-map.test.ts), [vehicle-motion.test.ts](tests/vehicle-motion.test.ts), [favorites.test.ts](tests/favorites.test.ts) | Partial/loop/multipart geometry, transfer identity, bounded interpolation/snap rules, favorite persistence and ordering. |
-| [preferences.test.ts](tests/preferences.test.ts), [route-viewport.test.ts](tests/route-viewport.test.ts) | Theme/route-lock defaults, legacy preference migration, blocked storage and half-overlap pan limits for wide, narrow and degenerate route bounds. |
-| [location.test.ts](tests/location.test.ts) | Explicit one-shot requests, accuracy preservation, coordinate validation, permission/unavailable/timeout errors and unsupported browsers. |
-| [ui.test.ts](tests/ui.test.ts), [presentation.test.ts](tests/presentation.test.ts), [browser tests](tests/e2e/app.spec.ts) | Rendering helpers, service ordering, note classes, place normalization/cache/privacy and desktop/mobile workflows, selection/race guards and failures. |
-
-Provider probes are opt-in:
-
-```sh
-LIVE_TRANSIT=1 npx vitest run tests/api-live.test.ts
-LIVE_PASSIO=1 npx vitest run tests/passio.test.ts
-```
-
-The map-location checks passed **462 deterministic tests and 106 browser tests**, plus TypeScript, the production build and Cloudflare bundle dry run. Nine opt-in live cases were skipped. Executed historical runs and exact live-check scope are recorded in [docs/verification.md](docs/verification.md); [docs/api-validation.md](docs/api-validation.md) states their precise live scope and transient failures.
-
-## Source map and maintenance
-
-```text
-src/main.ts                 UI, source status, network/provider tools and polling
-src/map.ts                  Leaflet layers and responsive route-relative map bounds
-src/route-viewport.ts       Half-overlap pan limits for route and viewport extents
-src/location.ts             Shared one-shot browser location and error handling
-src/athens.ts               Geographic sampling bounds for the Georgia trip monitor
-src/preferences.ts          Theme/route-lock defaults, migration and storage
-public/theme.js             Early saved/system palette before app rendering
-src/places.ts               Stop/address autocomplete and private query transport
-src/notes.ts                Readable note classes, icons and source details
-src/route-presentation.ts   Favorite/activity/operator ordering and labels
-src/favorites.ts            Bounded per-network local bus-line favorites
-src/compact-note.ts         Conservative regex note fragments
-src/journey-map.ts          Used ride geometry and transfer-stop extraction
-src/vehicle-motion.ts       Bounded display interpolation of accepted GPS fixes
-src/vehicle-selection.ts    One-marker-per-bus and current-over-outdated selection
-src/planner.ts              Browser earliest-arrival estimator
-src/api/                    Original adapters, Passio contracts and transport
-src/replication/             Concurrent source coordinator, merge and snapshot store
-src/data/athens-crosswalk.json  Reviewed Georgia aliases and evidence hashes
-src/data/authorities.json    Reviewed InfoPoint metadata/gateway roots
-worker/index.ts             Strict read-only gateway and static asset delegation
-wrangler.jsonc              Cloudflare Worker/static configuration
-.github/workflows/          Verify-and-deploy action
-tests/                      Unit, contract, browser and opt-in live checks
-docs/                       Deployment, extraction, replication and evidence
-```
-
-These are undocumented application APIs; paths, fields, service and IDs can change. Update the adapters, reviewed allowlist/crosswalk and meaningful regression tests together. `.gitignore` excludes dependencies, builds, secrets, local Cloudflare state, browser outputs, APK inputs and extraction output; the lockfile is tracked.
-
-Map tiles/attribution use [OpenStreetMap](https://www.openstreetmap.org/copyright), subject to its [tile policy](https://operations.osmfoundation.org/policies/tiles/). Leaflet is bundled locally. Manrope is self-hosted under its [SIL Open Font License](public/fonts/OFL.txt). Code is covered by [LICENSE](LICENSE). This is an independent project, not an official transit-operator service.
+Map data copyright belongs to [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). TranUGA is an independent app. [Code license](LICENSE)

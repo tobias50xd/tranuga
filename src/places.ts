@@ -1,6 +1,5 @@
 import type { Coordinate, Stop } from './types';
 import { distanceMeters } from './planner';
-import { escapeHtml as e } from './ui';
 
 export interface Place extends Coordinate { id: string; label: string; detail: string; kind: 'stop' | 'place' }
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -57,87 +56,4 @@ export class PlaceSearch {
       return places;
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
-}
-
-/** Editable ARIA combobox with stop hints, debounced addresses and stale-response protection. */
-export class PlaceInput {
-  private lifetime = new AbortController();
-  private request?: AbortController;
-  private timer?: ReturnType<typeof setTimeout>;
-  private revision = 0;
-  private active = -1;
-  private choices: Place[] = [];
-  private query = '';
-  private addresses: Place[] = [];
-  private addressStatus: 'idle' | 'searching' | 'finished' | 'failed' = 'idle';
-  private list: HTMLElement;
-  private status: HTMLElement;
-  constructor(private input: HTMLInputElement, private stops: () => Stop[], private bias: Coordinate, private near: () => Coordinate, private search: PlaceSearch, private change: (place: Place | undefined, text: string) => void, private allowed: (point: Coordinate) => boolean = () => true) {
-    this.list = document.getElementById(`${input.id}-hints`)!;
-    this.status = document.getElementById(`${input.id}-status`)!;
-    const signal = this.lifetime.signal;
-    input.addEventListener('input', () => { this.change(undefined, input.value); this.update(); }, { signal });
-    input.addEventListener('focus', () => { if (input.value) this.update(); }, { signal });
-    input.addEventListener('blur', () => this.close(), { signal });
-    input.addEventListener('keydown', event => {
-      if (event.key === 'Escape' || event.key === 'Tab') { this.close(); return; }
-      if (!this.choices.length || this.list.hidden) return;
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.active = this.active < 0 ? event.key === 'ArrowDown' ? 0 : this.choices.length - 1 : (this.active + (event.key === 'ArrowDown' ? 1 : -1) + this.choices.length) % this.choices.length; this.draw(this.status.textContent || ''); }
-      if (event.key === 'Enter') { event.preventDefault(); this.select(this.active < 0 ? 0 : this.active); }
-    }, { signal });
-    this.list.addEventListener('mousedown', event => event.preventDefault(), { signal });
-    this.list.addEventListener('click', event => { const option = (event.target as Element).closest<HTMLElement>('[data-choice]'); if (option && !input.disabled && !input.matches(':disabled')) this.select(Number(option.dataset.choice)); }, { signal });
-  }
-  setValue(text: string) { this.close(); this.input.value = text; }
-  refreshStops() {
-    if (!this.query) return;
-    const near = this.near();
-    const stops = matchStops(this.stops().filter(this.allowed), this.query, near);
-    const activeId = this.choices[this.active]?.id;
-    this.choices = this.addresses.length ? nearestPlaces([...stops, ...this.addresses.filter(this.allowed)], near, 8) : stops;
-    this.active = this.choices.findIndex(place => place.id === activeId);
-    const messages = {
-      idle: `${this.choices.length} stop suggestions. Use arrow keys and Enter to choose.`,
-      searching: 'Searching addresses…',
-      finished: this.choices.length ? `${this.choices.length} suggestions. Use arrow keys and Enter to choose.` : 'No matches. Try another name or use the map.',
-      failed: 'Address search is unavailable. Choose a stop or use the map.',
-    };
-    this.draw(messages[this.addressStatus]);
-  }
-  private select(index: number) { const place = this.choices[index]; if (!place) return; this.setValue(place.label); this.change(place, place.label); }
-  private update() {
-    this.close(); const query = this.input.value.trim(); if (query.length < 2 || query.length > 120 || /^[-+\d.\s,]+$/.test(query)) return;
-    this.query = query;
-    this.refreshStops();
-    if (query.length < 3 || this.choices.length >= 3 || this.choices.some(place => place.label.toLocaleLowerCase() === query.toLocaleLowerCase())) return;
-    this.addressStatus = 'searching';
-    this.status.textContent = 'Searching addresses…';
-    const revision = this.revision;
-    this.timer = setTimeout(async () => {
-      const request = this.request = new AbortController();
-      try {
-        const places = await this.search.search(query, this.bias, request.signal);
-        if (revision !== this.revision || request.signal.aborted) return;
-        this.addresses = places;
-        this.addressStatus = 'finished';
-        this.refreshStops();
-      } catch {
-        if (revision !== this.revision || request.signal.aborted) return;
-        this.addressStatus = 'failed';
-        this.refreshStops();
-      }
-    }, 500);
-  }
-  private draw(message: string) {
-    this.list.innerHTML = this.choices.map((place, index) => `<li id="${this.input.id}-option-${index}" role="option" aria-selected="${index === this.active}" data-choice="${index}"><span class="place-kind" aria-hidden="true">${place.kind === 'stop' ? '○' : '⌖'}</span><span><strong>${e(place.label)}</strong><small>${e(place.detail)}</small></span></li>`).join('');
-    this.list.hidden = !this.choices.length; this.input.setAttribute('aria-expanded', String(!!this.choices.length));
-    if (this.active >= 0) { this.input.setAttribute('aria-activedescendant', `${this.input.id}-option-${this.active}`); this.list.children[this.active]?.scrollIntoView({ block: 'nearest' }); } else this.input.removeAttribute('aria-activedescendant');
-    this.status.textContent = message;
-  }
-  close() {
-    clearTimeout(this.timer); this.request?.abort(); this.revision++;
-    this.query = ''; this.addresses = []; this.addressStatus = 'idle'; this.active = -1; this.choices = [];
-    this.list.hidden = true; this.input.setAttribute('aria-expanded', 'false'); this.input.removeAttribute('aria-activedescendant'); this.status.textContent = '';
-  }
-  destroy() { this.close(); this.lifetime.abort(); }
 }

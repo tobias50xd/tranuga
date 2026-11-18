@@ -80,7 +80,7 @@ Live tests are skipped unless `LIVE_TRANSIT=1` is explicitly set. Normal CI stay
 
 ## Limits of the evidence
 
-These checks validate representative UGA and CATA calls and the observed discovery directory. They do not establish all 73 agencies' live behavior, future uptime, operator permission for unrelated use, guaranteed ETA accuracy, pedestrian accessibility, or an actual Cloudflare production deployment. The gateway's reviewed-host policy can intentionally reject a newly discovered origin, an unfamiliar trace location, or a redirect until its source policy is updated and tested. See [feature.md](../feature.md) for per-endpoint shipped uses, future possibilities and the request/cache policy.
+These checks validate representative UGA and CATA calls and the observed discovery directory. They do not establish all 73 agencies' live behavior, future uptime, operator permission for unrelated use, guaranteed ETA accuracy, pedestrian accessibility, or an actual Cloudflare production deployment. The gateway's reviewed-host policy can intentionally reject a newly discovered origin, an unfamiliar trace location, or a redirect until its source policy is updated and tested. See the [gateway source](../worker/index.ts) for endpoint and cache policy.
 
 
 ## 2026-11-13 Passio and replication extension
@@ -116,7 +116,7 @@ The extension distinguishes route publication from current service: InfoPoint vi
 
 [replication-merge.test.ts](../tests/replication-merge.test.ts) covers two-of-three outliers, single-source fallback, nonaveraging, original age, nested cached provenance, complete directed sequences, loop abstention, schedule/ETA/EDT conflicts, known-run identity and bidirectional ambiguity. [replication-service.test.ts](../tests/replication-service.test.ts) covers crawling, schema/storage guards and coordinator fallback; [crosswalk.test.ts](../tests/crosswalk.test.ts) checks captured identity boundaries and the UGA `directionId` regression.
 
-A scoped run at 02:07:58 UTC passed **49 merge tests plus nine crosswalk tests** and the TypeScript check. Subsequent final changes require the full acceptance commands again; this scoped run does not prove the complete application, final browser behavior or production deployment. Final counts/status belong in [verification.md](verification.md).
+A scoped run at 02:07:58 UTC passed **49 merge tests plus nine crosswalk tests** and the TypeScript check. Subsequent final changes require the full acceptance commands again; this scoped run does not prove the complete application, final browser behavior or production deployment.
 
 The Passio adapter's recorded deterministic run passed 22 cases, with six expanded live cases opt-in. Ordinary CI skips live calls. Reproduce deliberately:
 

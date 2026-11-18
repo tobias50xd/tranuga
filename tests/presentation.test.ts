@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildNotes, classifyNote, renderNotes, compactNote } from '../src/notes';
+import { buildNotes, classifyNote, compactNote } from '../src/notes';
 import { routeState, sortRoutes } from '../src/route-presentation';
 import { matchStops, normalizePlaces, PlaceSearch } from '../src/places';
 import { knownStops, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from '../src/replication';
@@ -35,12 +35,12 @@ describe('readable travel notes', () => {
     ['Travel is estimated', 'estimate'],
     ['Provider unavailable', 'connection'],
   ])('classifies %s as %s', (message, kind) => { expect(classifyNote(message).kind).toBe(kind); });
-  it('escapes provider text and keeps errors accessible even if their text mentions backup data', () => {
-    const html = renderNotes(['<img src=x onerror=alert(1)>'], 'service');
-    expect(html).not.toContain('<img'); expect(html).toContain('&lt;img'); expect(html).toContain('aria-hidden="true"');
-    expect(renderNotes(['Saved data unavailable'], 'error')).toContain('role="alert"');
-    expect(renderNotes(['Select your destination'], 'action')).toContain('Select your destination');
-    expect(renderNotes([])).toBe('');
+  it('keeps errors actionable and preserves original provider text for the renderer', () => {
+    const alert = '<img src=x onerror=alert(1)>';
+    expect(buildNotes([alert], 'service')[0].message).toBe(alert);
+    expect(buildNotes(['Saved data unavailable'], 'error')[0]).toMatchObject({ tone: 'error', kind: 'connection' });
+    expect(buildNotes(['Select your destination'], 'action')[0].message).toBe('Select your destination');
+    expect(buildNotes([])).toEqual([]);
   });
 });
 
@@ -88,14 +88,6 @@ describe('place and stop search', () => {
   });
 });
 
-describe('compact note fragments',()=>{
- it('keeps warnings collapsed and opens actionable errors',()=>{
-  expect(renderNotes(['Showing static stops; current stop availability could not be confirmed.'])).toContain('<details class="notes-dropdown">');
-  expect(renderNotes(['Choose a start and destination from the suggestions, or use the map.'], 'action')).toContain('<details class="notes-dropdown" open>');
-  expect(renderNotes(['Showing static stops; current stop availability could not be confirmed.'])).toContain('Static stops · service unconfirmed');
- });
-});
-
 it('compacts known diagnostics while preserving counts, route letters, negation and clock times',()=>{
  expect(compactNote('3 data disagreements detected. Matching reports take precedence; disputed stop sequences are excluded from trip planning.')).toBe('3 source conflicts · disputed stop order excluded');
  expect(compactNote('Some vehicle positions are older than two minutes or have no timestamp. Check their update time.')).toBe('GPS >2 min / time unknown');
@@ -106,8 +98,7 @@ it('compacts known diagnostics while preserving counts, route letters, negation 
 
 it('keeps cancellation wording visible when an operator alert also contains a diagnostic phrase',()=>{
  const alert='Route A is not operating until 22:00; vehicle positions are older than two minutes. Use Route 12 instead.';
- const html=renderNotes([alert],'service');
- const fragment=html.match(/<p>(.*?)<\/p>/)![1];
+ const fragment=compactNote(buildNotes([alert], 'service')[0].message, true);
  for(const token of ['Route A','not operating','until 22:00','Route 12'])expect(fragment).toContain(token);
  expect(compactNote(alert,true)).toContain('not operating until 22:00');
 });
