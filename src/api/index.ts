@@ -4,6 +4,7 @@ import { ApiClient } from './client';
 import { discoveryEndpoints, infoEndpoints, kmlEndpoint, ugaEndpoints } from './endpoints';
 import { infoDepartures, list, messages, normalizeAgencies, normalizeRoutes, normalizeStops, normalizeVehicles, parseKml, record, rows, text, ugaDepartures, uniqueStops } from './normalize';
 import { infoPatterns, ugaTopology, ugaTrackingPatterns, withDirectionStops, type UgaTopology } from './topology';
+import { vehicleAgeWarnings } from '../vehicle-selection';
 
 export { ApiClient } from './client';
 export { discoveryEndpoints, infoEndpoints, kmlEndpoint, ugaEndpoints } from './endpoints';
@@ -25,7 +26,6 @@ async function concurrent<T, U>(values: T[], fn: (value: T) => Promise<U>, limit
   })); return result;
 }
 const failure = (error: unknown) => error instanceof Error ? error.message : 'Transit request failed.';
-const staleWarning = (vehicles: Vehicle[]) => vehicles.some(v => !v.updatedAt || Date.now() - v.updatedAt > 120000) ? ['Some vehicle positions are older than two minutes or have no timestamp. Check their update time.'] : [];
 
 export class TransitService {
   readonly client: ApiClient;
@@ -68,19 +68,20 @@ export class TransitService {
     const stops = this.agency.kind === 'uga' ? (await this.staticNetwork()).stops : normalizeStops(await this.client.get(infoEndpoints(this.agency.restUrl!).stops, 300000));
     return [...new Map([...stops, ...this.cachedStops.values()].map(stop => [stop.id, stop])).values()];
   }
-  async getRoute(routeId: string): Promise<RouteDetail> {
+  async getRoute(routeId: string, includeVehicles = true): Promise<RouteDetail> {
     if (!this.routes.length) await this.listRoutes();
     const route = this.routes.find(r => r.id === routeId); if (!route) throw new Error('This route is not in the current route catalog.');
     const warnings: string[] = [];
     if (this.agency.kind === 'uga') {
-      const [topology, vehicles] = await Promise.all([this.staticNetwork().catch(error => { warnings.push(`Static topology unavailable: ${failure(error)}`); return { stops: [], patterns: [], shapes: new Map<string, Coordinate[]>() }; }), this.refreshVehicles().catch(error => { warnings.push(failure(error)); return []; })]);
+      const [topology, vehicles] = await Promise.all([this.staticNetwork().catch(error => { warnings.push(`Static topology unavailable: ${failure(error)}`); return { stops: [], patterns: [], shapes: new Map<string, Coordinate[]>() }; }), includeVehicles ? this.refreshVehicles().catch(error => { warnings.push(failure(error)); return []; }) : []]);
       let patterns: RoutePattern[] = [], departures: Departure[] = [];
       try { const raw = await this.client.get(ugaEndpoints.tracking(routeId)); patterns = ugaTrackingPatterns(raw, routeId, topology); departures = ugaDepartures(raw); }
       catch (error) { warnings.push(`Live stop predictions unavailable: ${failure(error)}`); }
       if (!patterns.length) { patterns = topology.patterns.filter(p => p.routeId === routeId); warnings.push('Showing static stops; current stop availability could not be confirmed.'); }
       if (patterns.some(p => p.shape.length < 2)) warnings.push('Road trace unavailable; dashed stop connectors are approximate.');
       const stops = uniqueStops(patterns); stops.forEach(s => this.cachedStops.set(s.id, s));
-      return { route, patterns, stops, vehicles: vehicles.filter(v => v.routeId === routeId), departures, messages: [], warnings: [...warnings, ...staleWarning(vehicles.filter(v => v.routeId === routeId))] };
+      const routeVehicles = vehicles.filter(vehicle => vehicle.routeId === routeId);
+      return { route, patterns, stops, vehicles: routeVehicles, departures, messages: [], warnings: [...warnings, ...vehicleAgeWarnings(routeVehicles)] };
     }
     const e = infoEndpoints(this.agency.restUrl!);
     const [raw, directionsRaw, routeStopsRaw] = await Promise.all([
@@ -104,8 +105,8 @@ export class TransitService {
     const stops = [...new Map([...normalizeStops(routeStopsRaw), ...normalizeStops(Array.isArray(row.Stops) ? row.Stops : []), ...uniqueStops(patterns)].map(s => [s.id, s])).values()];
     stops.forEach(s => this.cachedStops.set(s.id, s));
     if (!shape.length) warnings.push('Road trace unavailable; dashed stop connectors are approximate.');
-    const vehicles = normalizeVehicles([row], 'infopoint');
-    return { route, patterns, stops, vehicles, departures: [...this.recentDepartures.values()].flat().filter(d => d.routeId === routeId), messages: messages(row.Messages), warnings: [...warnings, ...staleWarning(vehicles)] };
+    const vehicles = includeVehicles ? normalizeVehicles([row], 'infopoint') : [];
+    return { route, patterns, stops, vehicles, departures: [...this.recentDepartures.values()].flat().filter(d => d.routeId === routeId), messages: messages(row.Messages), warnings: [...warnings, ...vehicleAgeWarnings(vehicles)] };
   }
   async getStop(stopId: string): Promise<StopDetail> {
     if (this.agency.kind === 'uga') {
@@ -163,6 +164,6 @@ export class TransitService {
       if (missing.length) warnings.push(`Ordered stop data unavailable for ${missing.map(r => r.shortName).join(', ')}; these routes are excluded from planning.`);
     }
     const stops = uniqueStops(patterns); stops.forEach(s => this.cachedStops.set(s.id, s));
-    return { agencyId: this.agency.id, routes, stops, patterns, vehicles, departures, messages: publicMessages, updatedAt: Date.now(), warnings: [...warnings, ...staleWarning(vehicles)] };
+    return { agencyId: this.agency.id, routes, stops, patterns, vehicles, departures, messages: publicMessages, updatedAt: Date.now(), warnings: [...warnings, ...vehicleAgeWarnings(vehicles)] };
   }
 }

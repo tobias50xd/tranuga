@@ -23,8 +23,8 @@ describe('bounded display interpolation',()=>{
  });
  it('does not restart cached identical fixes or move backwards for out-of-order observations',()=>{
   const motion=new VehicleMotion(bus()),next=bus({lon:-83.3769,updatedAt:now+15000});motion.update(next,now+15000);
-  motion.update({...next},now+15600);expect(motion.moving(now+16200)).toBe(false);
-  motion.update(bus({lon:-83.38}),now+17000);expect(motion.latest).toEqual(next);
+  motion.update({...next},now+15600);expect(motion.moving(now+15000+MAX_TWEEN_MS)).toBe(false);
+  motion.update(bus({lon:-83.38}),now+19000);expect(motion.latest).toEqual(next);
  });
  it.each([
   ['unknown time',bus({updatedAt:undefined})],
@@ -48,7 +48,7 @@ describe('bounded display interpolation',()=>{
   motion.update(moved,now+15000);
   motion.update({...moved,agreement:'corroborated'},now+15600);
   expect(motion.latest.agreement).toBe('corroborated');
-  expect(motion.moving(now+16200)).toBe(false);
+  expect(motion.moving(now+15000+MAX_TWEEN_MS)).toBe(false);
   motion.update({...moved,routeId:'2'},now+16300);
   expect(motion.latest.routeId).toBe('2');
  });
@@ -69,5 +69,37 @@ describe('bounded display interpolation',()=>{
   expect(motion.moving(now+15000)).toBe(false);
   motion.update(bus({lon:-83.3768,updatedAt:now+30000}),now+30000);motion.finish();
   expect(motion.moving(now+30000)).toBe(false);expect(motion.sample(now+30000).lon).toBe(-83.3768);
+ });
+ it('eases into and out of the fix, and finishes faster for a faster bus',()=>{
+  const slow=new VehicleMotion(bus()),fast=new VehicleMotion(bus());
+  const start=now+15000;
+  const slowFix=bus({lon:-83.3769,updatedAt:start});
+  slow.update(slowFix,start);
+  fast.update(bus({lon:-83.3761,updatedAt:now+4000}),start);
+  expect(fast.moving(start+1500)).toBe(false);
+  expect(slow.moving(start+1500)).toBe(true);
+  const quarter=slow.sample(start+MAX_TWEEN_MS/4);
+  const middle=slow.sample(start+MAX_TWEEN_MS/2);
+  expect(quarter.lon-bus().lon).toBeLessThan(middle.lon-quarter.lon);
+  expect(slow.sample(start+MAX_TWEEN_MS).lon).toBe(slowFix.lon);
+ });
+ it('snaps to a selected replacement source even when that fix is slightly older',()=>{
+  const refs=(source:string)=>[{source,id:'bus',fetchedAt:now}];
+  const motion=new VehicleMotion(bus({sources:refs('Portal')}));
+  const replacement=bus({sources:refs('Passio'),lon:-83.3769,updatedAt:now-1000});
+  motion.update(replacement,now);
+  expect(motion.latest).toEqual(replacement);
+  expect(motion.moving(now)).toBe(false);
+ });
+ it('paces explicitly current clock-only fixes using their receipt interval without adding GPS timestamps',()=>{
+  const current=(fetchedAt:number,lon:number)=>bus({
+   active:true,updatedAt:undefined,lon,sources:[{source:'Passio',id:'bus',fetchedAt}],
+  });
+  const motion=new VehicleMotion(current(now,-83.377));
+  const next=current(now+15000,-83.3769);
+  motion.update(next,now+15000);
+  expect(motion.moving(now+15000)).toBe(true);
+  expect(motion.sample(now+15000+MAX_TWEEN_MS).lon).toBe(next.lon);
+  expect(motion.latest.updatedAt).toBeUndefined();
  });
 });

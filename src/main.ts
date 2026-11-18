@@ -1,12 +1,13 @@
 import './style.css';
 import { UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from './api';
 import { createTransitService, knownStops, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
+import type { RouteVehicleSnapshot, RouteVehicleTracker } from './replication/route-vehicles';
 import { planJourney, parseCoordinate, type Journey } from './planner';
 import { TransitMap } from './map';
 import { renderNotes, compactNote } from './notes';
 import { Favorites } from './favorites';
 import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-presentation';
-import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
+import { uniqueVehicles, vehicleAgeWarnings, vehicleIsStale } from './vehicle-selection';
 import { PlaceInput, PlaceSearch } from './places';
 import { getCurrentLocation } from './location';
 import { readPreferences, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
@@ -35,6 +36,9 @@ let displayedJourney: Journey | undefined;
 let pickMode: 'origin' | 'destination' | undefined;
 let operation = 0;
 let pollingOperation: number | undefined;
+let stopRouteVehicleUpdates: (() => void) | undefined;
+const VEHICLE_REFRESH_MS = 15_000;
+const ROUTE_PROBE_LEAD_MS = 5_000;
 let catalogTime: number | undefined;
 let network: Network | undefined;
 let agencyChoices: Agency[] = [];
@@ -71,6 +75,7 @@ function setPath(path: string, mode: HistoryMode) {
 }
 function setView(next: typeof view) {
   Object.values(pointInputs).forEach(input => input.destroy()); pointInputs = {};
+  stopRouteVehicleUpdates?.();
   map?.destroy(); map = undefined; displayedJourney = undefined; view = next; operation++;
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-nav]')) {
     const active = button.dataset.nav === (next === 'detail' ? 'routes' : next);
@@ -202,20 +207,19 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
   setView('detail'); const token = operation; detail = undefined; selectedStop = undefined; selectedDirection = '';
   main.innerHTML = `<section class="container detail-page"><button class="text-button" id="back-routes">← All routes</button><div id="route-detail" class="loading" role="status">Loading route, stops and live buses…</div></section>`;
   $('#back-routes').onclick = () => void showRoutes();
+  const latestSnapshot = startRouteVehicleUpdates(service.routeVehicleTracker(routeId), token);
   try {
-    // Start a live request with map loading, even if the catalog warmed the short client cache.
-    // Reconcile the entire fleet before filtering so old route assignments cannot leave ghost buses.
-    const live = service.refreshVehicles(true).catch(() => undefined);
-    const [raw, vehicles] = await Promise.all([service.getRoute(routeId), live]);
-    const result = { ...raw, vehicles: uniqueVehicles(vehicles ?? raw.vehicles).filter(bus => bus.routeId === routeId) };
+    const result = await service.getRoute(routeId, false);
     if (token !== operation) return;
+    const snapshot = latestSnapshot();
+    result.vehicles = snapshot.vehicles;
     detail = result;
     $('#route-detail').className = '';
     $('#route-detail').innerHTML = `<div class="detail-title"><span class="route-badge large" style="--route-color:${safeColor(result.route.color)}">${e(result.route.shortName)}</span><div><div class="eyebrow">${e(agency.name)}</div><h1 tabindex="-1">${e(result.route.name)}</h1></div><div class="detail-stats" id="detail-stats"></div></div>
-      <div class="route-layout"><div class="map-wrap"><div id="route-map" class="map" role="region" aria-label="Route map with stops and bus directions"></div><div class="map-caption"><span><i class="legend-line" style="background:${safeColor(result.route.color)}"></i>Route</span><span>○ Stop</span><span>↑ Bus heading</span><span>Grey = outdated / unconfirmed</span><span>Brief GPS smoothing</span></div></div>
+      <div class="route-layout"><div class="map-wrap"><div id="route-map" class="map" role="region" aria-label="Route map with stops and bus directions"></div><div class="map-caption"><span><i class="legend-line" style="background:${safeColor(result.route.color)}"></i>Route</span><span>○ Stop</span><span>▴ Bus heading</span><span>Grey = last known position</span></div></div>
       <aside class="stop-panel"><div class="panel-heading"><h2>Along the way</h2><label class="sr-only" for="route-direction">Route direction</label><select id="route-direction"><option value="">All directions</option>${result.patterns.map(pattern => `<option value="${e(pattern.id)}">${e(pattern.direction)}</option>`).join('')}</select></div><div id="stop-detail" aria-live="polite"></div><div id="route-stops"></div></aside></div>
-      <div class="route-notes"><div id="service-messages">${warning(result.messages, 'service')}</div><div id="route-warnings">${warning(result.warnings)}</div></div>
-      <div class="vehicles-section"><h2>On the road</h2><p class="muted">Positions refresh every 15 seconds. Arrows show the reported heading.</p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
+      <div class="route-notes"><div id="service-messages">${warning(result.messages, 'service')}</div><div id="route-warnings"></div></div>
+      <div class="vehicles-section"><h2>On the road</h2><p class="muted" id="route-vehicle-source"></p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
     map = new TransitMap($('#route-map'), agency.center || center, undefined, routeLocked, setRouteLock);
     map.showRoute(result, stop => void showStop(stop));
     $<HTMLSelectElement>('#route-direction').onchange = event => {
@@ -223,7 +227,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
       map?.showRoute(detail!, stop => void showStop(stop), selectedDirection);
       renderStops();
     };
-    renderStops(); renderVehicles(); focusTitle();
+    renderStops(); renderVehicles(snapshot); focusTitle();
     renderReplication();
     document.querySelector<HTMLFormElement>('#bus-search')?.addEventListener('submit', async event => {
       event.preventDefault(); const query = $<HTMLInputElement>('#bus-query').value.trim(); $('#bus-search-result').textContent = 'Looking up that bus…';
@@ -233,8 +237,11 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
     });
     void service.getMessages().then(messages => { if (token === operation) writeNotes('#service-messages', warning([...new Set([...result.messages, ...messages])], 'service')); }).catch(error => { if (token === operation) $('#service-messages').innerHTML += warning([`Service alerts could not be loaded: ${errorMessage(error)}`]); });
   } catch (error) {
-    if (token === operation) $('#route-detail').innerHTML = `${warning([errorMessage(error)], 'error')}<button class="button" id="retry-route">Retry route</button>`;
-    document.querySelector<HTMLButtonElement>('#retry-route')?.addEventListener('click', () => void showRoute(routeId));
+    if (token === operation) {
+      stopRouteVehicleUpdates?.();
+      $('#route-detail').innerHTML = `${warning([errorMessage(error)], 'error')}<button class="button" id="retry-route">Retry route</button>`;
+      $('#retry-route').onclick = () => void showRoute(routeId);
+    }
   }
 }
 
@@ -269,10 +276,14 @@ async function showStop(stop: Stop) {
   }
 }
 
-function renderVehicles() {
+function renderVehicles(snapshot: RouteVehicleSnapshot) {
   if (!detail || view !== 'detail') return;
+  writeNotes('#route-warnings', warning([...detail.warnings, ...vehicleAgeWarnings(snapshot.vehicles)]));
+  $('#route-vehicle-source').textContent = snapshot.source
+    ? `${snapshot.source} · ${snapshot.saved ? 'Showing last received positions' : 'Checks every 15 seconds'}`
+    : snapshot.pending ? 'Checking available bus feeds…' : 'Bus position feeds are unavailable.';
   $('#detail-stats').innerHTML = `<strong>${detail.vehicles.length}</strong><span>buses reported</span>`;
-  $('#vehicle-list').innerHTML = uniqueVehicles(detail.vehicles).map(bus => `<article class="vehicle-card"><span class="vehicle-heading" style="transform:rotate(${Number.isFinite(bus.heading) ? bus.heading : 0}deg)" aria-hidden="true">↑</span><div><strong>Bus ${e(bus.id)}</strong><p>${e(bus.destination || detail!.route.name)}</p><small>${e(headingLabel(bus.heading))} · ${Math.round(bus.heading)}° · ${e(vehicleAge(bus.updatedAt))}</small>${vehicleIsStale(bus) ? '<span class="stale-label">Last known position</span>' : ''}</div></article>`).join('') || '<div class="empty">No buses are currently reported on this route.</div>';
+  $('#vehicle-list').innerHTML = detail.vehicles.map(bus => `<article class="vehicle-card"><span class="vehicle-heading" style="transform:rotate(${Number.isFinite(bus.heading) ? bus.heading : 0}deg)" aria-hidden="true">▴</span><div><strong>Bus ${e(bus.id)}</strong><p>${e(bus.destination || detail!.route.name)}</p><small>${e(headingLabel(bus.heading))} · ${Math.round(bus.heading)}° · ${e(vehicleAge(bus.updatedAt))}</small>${vehicleIsStale(bus) ? '<span class="stale-label">Last known position</span>' : ''}</div></article>`).join('') || (snapshot.pending ? '' : '<div class="empty">No buses are currently reported on this route.</div>');
 }
 
 function pointField(kind: 'origin' | 'destination', label: string, value: string) {
@@ -439,17 +450,49 @@ async function selectAgency(choice: Agency) {
   await showRoutes(true);
 }
 
+function startRouteVehicleUpdates(tracker: RouteVehicleTracker, token: number) {
+  let snapshot: RouteVehicleSnapshot = { vehicles: [], pending: true };
+  const publish = () => {
+    if (token !== operation || document.hidden) return;
+    snapshot = tracker.snapshot();
+    if (!detail) return;
+    detail.vehicles = snapshot.vehicles;
+    map?.showVehicles(snapshot.vehicles, detail.route.color);
+    renderVehicles(snapshot);
+  };
+  const probe = () => {
+    if (!document.hidden) void tracker.probe();
+  };
+  let initial = true;
+  if (!document.hidden) void tracker.probe().then(() => { if (initial) publish(); });
+  const initialDeadline = window.setTimeout(() => {
+    initial = false;
+    publish();
+  }, ROUTE_PROBE_LEAD_MS);
+  let recurringProbe: number | undefined;
+  const firstProbe = window.setTimeout(() => {
+    probe();
+    recurringProbe = window.setInterval(probe, VEHICLE_REFRESH_MS);
+  }, VEHICLE_REFRESH_MS - ROUTE_PROBE_LEAD_MS);
+  const refresh = window.setInterval(publish, VEHICLE_REFRESH_MS);
+  stopRouteVehicleUpdates = () => {
+    initial = false;
+    window.clearTimeout(initialDeadline);
+    window.clearTimeout(firstProbe);
+    window.clearInterval(recurringProbe);
+    window.clearInterval(refresh);
+    stopRouteVehicleUpdates = undefined;
+  };
+  return () => snapshot;
+}
+
 async function refreshLiveVehicles(initial = false) {
-  if (document.hidden || pollingOperation === operation || !(view==='detail' && detail || view==='plan' && (initial || displayedJourney && network))) return;
+  if (document.hidden || pollingOperation === operation || view !== 'plan' || !(initial || displayedJourney && network)) return;
   const token=operation; pollingOperation=token;
   try {
     const vehicles=uniqueVehicles(await service.refreshVehicles(initial));
     if (token!==operation) return;
-    if (view==='detail' && detail) {
-      detail.vehicles=vehicles.filter(bus=>bus.routeId===detail!.route.id);
-      map?.showVehicles(detail.vehicles,detail.route.color); renderVehicles();
-      writeNotes('#route-warnings',warning(detail.warnings));
-    } else if (view==='plan' && displayedJourney && network) {
+    if (displayedJourney && network) {
       network.vehicles=vehicles; map?.showJourneyVehicles(displayedJourney,network);
       document.querySelectorAll<HTMLElement>('[data-line-buses]').forEach(element=>{
         const count=vehicles.filter(bus=>bus.routeId===element.dataset.lineBuses).length;
@@ -460,13 +503,12 @@ async function refreshLiveVehicles(initial = false) {
   } catch (error) {
     if (token!==operation) return;
     const message=warning([`Live refresh failed: ${errorMessage(error)} Showing the last received positions.`]);
-    if (view==='detail') writeNotes('#route-warnings',message);
-    else if (view==='plan') writeNotes('#trip-notes',message);
+    writeNotes('#trip-notes',message);
   } finally { if (pollingOperation === token) pollingOperation=undefined; }
 }
-window.setInterval(() => void refreshLiveVehicles(),15000);
+window.setInterval(() => void refreshLiveVehicles(),VEHICLE_REFRESH_MS);
 
-window.setInterval(() => { if (view !== 'agencies') void crawlLive(); }, 60000);
+window.setInterval(() => { if (view === 'routes' || view === 'plan') void crawlLive(); }, 60000);
 
 function showCurrentPath() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';

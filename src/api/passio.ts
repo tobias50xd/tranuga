@@ -250,12 +250,12 @@ export class PassioService {
     results.forEach(result => { if (result.status === 'fulfilled') departures.push(...result.value); else warnings.push(`Passio arrival predictions unavailable: ${failure(result.reason)}`); });
     return { departures, warnings };
   }
-  async getRoute(routeId: string): Promise<RouteDetail> {
+  async getRoute(routeId: string, includeVehicles = true): Promise<RouteDetail> {
     const [routes, topology] = await Promise.all([this.catalog.length ? Promise.resolve(this.catalog) : this.listRoutes(), this.loadTopology()]);
     const route = routes.find(row => row.id === routeId); if (!route) throw new Error('Route is absent from the Passio catalog.');
     const patterns = topology.patterns.filter(pattern => pattern.routeId === routeId), stops = uniqueStops(patterns), warnings: string[] = [];
     const [vehicles, messages, predictions] = await Promise.all([
-      this.refreshVehicles().catch(error => { warnings.push(failure(error)); return []; }),
+      includeVehicles ? this.refreshVehicles().catch(error => { warnings.push(failure(error)); return []; }) : [],
       this.getMessages().catch(error => { warnings.push(failure(error)); return []; }),
       this.predictions(stops.map(stop => stop.id)),
     ]);

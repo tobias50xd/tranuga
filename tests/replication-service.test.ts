@@ -17,6 +17,26 @@ function memory(): StorageLike & { data:Map<string,string> } { const data=new Ma
 function replicated(services: TransitProvider[], store=new SnapshotStore(), clock=()=>now) { return new ReplicatedTransitService(agency, services.map((service,i)=>({id:String(i),label:`Source${i+1}`,priority:i,service})),undefined,store,clock,'replicas'); }
 
 describe('replicated crawling and public last-good snapshots',()=>{
+  it('chooses different single endpoints on different routes, including an individual Passio mirror',async()=>{
+    const portal=provider(), unavailable=provider(), mirror=provider();
+    const bus=network.vehicles[0];
+    portal.refreshVehicles=vi.fn(async()=>[bus,{...bus,id:'old-2',routeId:'2',active:false}]);
+    unavailable.refreshVehicles=fail;
+    mirror.refreshVehicles=vi.fn(async()=>[
+      {...bus,id:'old-x',routeId:'x',active:false},
+      {...bus,id:'fresh-y',routeId:'y'},
+    ]);
+    const replicas=replicated([unavailable,mirror]);
+    const service=new ReplicatedTransitService(agency,[
+      {id:'portal',label:'Portal',aliasKey:'portal',priority:0,service:portal},
+      {id:'passio',label:'Passio',aliasKey:'passio',prefix:'passio:',priority:1,service:replicas},
+    ],{routes:[{id:'1',sources:{portal:'1',passio:'x'}},{id:'2',sources:{portal:'2',passio:'y'}}],stops:[],vehicles:[]},new SnapshotStore(),()=>now);
+    const routeOne=service.routeVehicleTracker('1'),routeTwo=service.routeVehicleTracker('2');
+    await Promise.all([routeOne.probe(),routeTwo.probe()]);
+    expect(routeOne.snapshot()).toMatchObject({source:'Portal',vehicles:[{id:'bus',routeId:'1'}]});
+    expect(routeTwo.snapshot()).toMatchObject({source:'Source2',vehicles:[{id:'passio:fresh-y',routeId:'2',sources:[{source:'Source2',id:'fresh-y'}]}]});
+    expect(mirror.refreshVehicles).toHaveBeenCalledWith(true);
+  });
   it('crawls every configured source, reconciles data, and exposes responding source health',async()=>{
     const providers=[provider(),provider(),provider()], service=replicated(providers);
     const result=await service.sync();

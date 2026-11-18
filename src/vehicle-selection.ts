@@ -7,6 +7,12 @@ export function vehicleIsStale(vehicle: Vehicle, now = Date.now()): boolean {
   return !Number.isFinite(vehicle.updatedAt) || now - vehicle.updatedAt > 120000 || vehicle.updatedAt > now + 60000;
 }
 
+export function vehicleAgeWarnings(vehicles: readonly Vehicle[], now = Date.now()): string[] {
+  return vehicles.some(bus => !bus.updatedAt || now - bus.updatedAt > 120_000)
+    ? ['Some vehicle positions are older than two minutes or have no timestamp. Check their update time.']
+    : [];
+}
+
 const agreementRank = (vehicle: Vehicle) => vehicle.agreement === 'corroborated' ? 2 : vehicle.agreement === 'single-source' ? 1 : 0;
 
 /** Prefer a provider-current marker for one canonical bus. */

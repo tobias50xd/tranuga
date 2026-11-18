@@ -3,12 +3,13 @@ import type { PassioSystemInfo, PassioTimetable, PassioJourneyComparison } from 
 import type { ApiClient } from '../api/client';
 import { MergeSession, type Crosswalk, type MergeCounts, type Observation, type SourceIdentity } from './merge';
 import { SnapshotStore } from './store';
+import { RouteVehicleTracker, type RouteVehicleFeed } from './route-vehicles';
 
 export interface TransitProvider {
   readonly client: ApiClient;
   listRoutes(): Promise<Route[]>;
   getStops?(): Promise<Stop[]>;
-  getRoute(id: string): Promise<RouteDetail>;
+  getRoute(id: string, includeVehicles?: boolean): Promise<RouteDetail>;
   getStop(id: string): Promise<StopDetail>;
   getNetwork(): Promise<Network>;
   refreshVehicles(fresh?: boolean): Promise<Vehicle[]>;
@@ -69,11 +70,13 @@ export class ReplicatedTransitService implements TransitProvider {
     this.health.set(source.id, { ...health, state, error: errors || undefined, lastSuccessAt: Math.max(0, ...recent.map(value => value.lastSuccessAt ?? 0)) || undefined });
   }
   private async collect<T>(operation: string, invoke: (source: ReplicaSource) => Promise<T>, valid: (value: unknown) => value is T, sources = this.sources): Promise<Observation<T>[]> {
+    const routePrefix = operation.startsWith('route:') ? 'route:' : operation.startsWith('route-details:') ? 'route-details:' : undefined;
+    const routeId = routePrefix && operation.slice(routePrefix.length);
     const results = await Promise.all(sources.map(async source => {
       const key = `${this.agency.id}:${source.id}:${operation}`;
       const at = this.now(); const previous = this.health.get(source.id);
       try {
-        const childOperation = operation.startsWith('route:') ? `route:${this.session().native('routes', operation.slice(6), source)}` : operation.startsWith('stop:') ? `stop:${this.session().native('stops', operation.slice(5), source)}` : operation;
+        const childOperation = routeId ? `${routePrefix}${this.session().native('routes', routeId, source)}` : operation.startsWith('stop:') ? `stop:${this.session().native('stops', operation.slice(5), source)}` : operation;
         let running = this.sourceCalls.get(key) as Promise<T> | undefined;
         if (!running) {
           running = Promise.resolve().then(() => invoke(source)).then(value => {
@@ -99,6 +102,7 @@ export class ReplicatedTransitService implements TransitProvider {
         return { source, value, at: received, cached: wasCached } as Observation<T>;
       } catch (error) {
         let saved = this.store.get(key, valid);
+        if (!saved && routePrefix === 'route-details:') saved = this.store.get(`${this.agency.id}:${source.id}:route:${routeId}`, valid);
         // A full network snapshot can restore core views even after smaller LRU entries expired.
         if (!saved) {
           const network = this.store.get(`${this.agency.id}:${source.id}:network`, isNetwork);
@@ -108,8 +112,8 @@ export class ReplicatedTransitService implements TransitProvider {
             if (operation === 'stops') recovered = network.value.stops;
             if (operation === 'vehicles') recovered = network.value.vehicles;
             if (operation === 'messages') recovered = network.value.messages;
-            if (operation.startsWith('route:')) {
-              const id = this.session().native('routes', operation.slice(6), source);
+            if (routeId) {
+              const id = this.session().native('routes', routeId, source);
               const route = network.value.routes.find(value => value.id === id);
               if (route) { const patterns = network.value.patterns.filter(value => value.routeId === id); const ids = new Set(patterns.flatMap(pattern => pattern.stops.map(stop => stop.id))); recovered = { route, patterns, stops: network.value.stops.filter(stop => ids.has(stop.id)), vehicles: network.value.vehicles.filter(bus => bus.routeId === id), departures: network.value.departures.filter(value => value.routeId === id), messages: network.value.messages, warnings: network.value.warnings }; }
             }
@@ -164,15 +168,45 @@ export class ReplicatedTransitService implements TransitProvider {
       const session = this.session(), stops = session.stops(input); this.finish(session); return stops;
     });
   }
-  async getRoute(id: string): Promise<RouteDetail> {
-    return this.run(`route:${id}`, async () => {
+  async getRoute(id: string, includeVehicles = true): Promise<RouteDetail> {
+    const key = `${includeVehicles ? 'route' : 'route-details'}:${id}`;
+    return this.run(key, async () => {
       if (!this.catalog.size) await this.listRoutes();
       const session = this.session();
       const eligible = this.sources.filter(source => { const native = session.native('routes', id, source); return native !== undefined && (!this.catalog.has(source.id) || this.catalog.get(source.id)!.has(native)); });
       if (!eligible.length) throw new Error('No source supplies this route.');
-      const input = await this.collect(`route:${id}`, source => source.service.getRoute(session.native('routes', id, source)!), isDetail, eligible);
+      const input = await this.collect(key, source => source.service.getRoute(session.native('routes', id, source)!, includeVehicles), isDetail, eligible);
       this.remember(input);
-      const result = session.route(input); result.warnings = [...new Set([...result.warnings, ...this.warnings(input, session)])]; this.finish(session); return result;
+      const details = includeVehicles ? input : input.map(observation => ({ ...observation, value: { ...observation.value, vehicles: [] } }));
+      const result = session.route(details); result.warnings = [...new Set([...result.warnings, ...this.warnings(input, session)])]; this.finish(session); return result;
+    });
+  }
+  routeVehicleTracker(routeId: string): RouteVehicleTracker {
+    return new RouteVehicleTracker(routeId, this.routeVehicleFeeds(routeId), this.now);
+  }
+  private routeVehicleFeeds(routeId: string): RouteVehicleFeed[] {
+    const session = this.session();
+    const alias = this.aliases.routes.find(entry => entry.id === routeId);
+    return [...this.sources].sort((a, b) => a.priority - b.priority).flatMap(source => {
+      if (alias && source.aliasKey && !alias.sources[source.aliasKey]) return [];
+      const native = session.native('routes', routeId, source);
+      if (native === undefined || !alias && !source.prefix && this.sources.some(other => other.prefix && routeId.startsWith(other.prefix))) return [];
+      const feeds = source.service instanceof ReplicatedTransitService
+        ? source.service.routeVehicleFeeds(native)
+        : [{ label: source.label, read: () => source.service.refreshVehicles(true) }];
+      return feeds.map(feed => ({
+        label: feed.label,
+        read: async () => {
+          const vehicles = await feed.read();
+          if (!arrayOf(vehicles, isVehicle)) throw new Error('Vehicle response failed normalized schema validation.');
+          return vehicles.map(bus => ({
+            ...bus,
+            id: session.canonical('vehicles', bus.id, source),
+            routeId: session.canonical('routes', bus.routeId, source),
+            sources: bus.sources ?? [{ source: feed.label, id: bus.id, fetchedAt: this.now() }],
+          }));
+        },
+      }));
     });
   }
   async getStop(id: string): Promise<StopDetail> {

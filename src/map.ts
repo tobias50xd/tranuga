@@ -160,11 +160,14 @@ export class TransitMap {
       const key=bus.id; present.add(key);
       let state=this.busMarkers.get(key);
       if (!state) {
-        state={marker:L.marker([bus.lat,bus.lon],{icon:L.divIcon({className:'bus-marker',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(this.vehicles),motion:new VehicleMotion(bus)};
+        state={marker:L.marker([bus.lat,bus.lon],{icon:L.divIcon({className:'bus-marker',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(this.vehicles),motion:new VehicleMotion(bus)};
         this.busMarkers.set(key,state);
       } else state.motion.update(bus,now,this.reducedMotion.matches || document.hidden);
       const latest=state.motion.latest, stale=vehicleIsStale(latest,now);
-      state.marker.setIcon(L.divIcon({className:'bus-marker',html:`<span class="bus-pointer ${stale?'stale':''}" style="--bus-color:${safeColor(color(latest))};--heading:${Number.isFinite(latest.heading)?latest.heading:0}deg"><span>↑</span></span>`,iconSize:[34,34],iconAnchor:[17,17]}));
+      state.marker.setIcon(L.divIcon({
+        className: 'bus-marker', iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<span class="bus-pointer ${stale ? 'stale' : ''}" style="--bus-color:${safeColor(color(latest))}"><span class="bus-bearing" aria-hidden="true"></span><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="16" rx="4"/><path d="M4 11h16M7 19v2m10-2v2M8 15h1m6 0h1"/></svg></span>`,
+      }));
       state.marker.getElement()?.setAttribute('aria-label',`Bus ${latest.id}, ${headingLabel(latest.heading)}`);
       const routeName=name(latest);
       const popup=`<strong>Bus ${e(latest.id)}</strong>${routeName?`<br>${e(routeName)}`:''}<br>${e(latest.destination||'')}<br>Heading ${e(headingLabel(latest.heading))} · ${Math.round(latest.heading)}°<br>${e(vehicleAge(latest.updatedAt))}${stale?'<br>Last known position — may be stale':''}`;

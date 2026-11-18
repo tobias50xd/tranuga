@@ -153,6 +153,40 @@ test('opening a route immediately refreshes cached bus data before displaying it
   expect(calls.filter(url=>url.endsWith('/Buses')).length).toBeGreaterThan(before);
 });
 
+test('the open route probes alternatives before the next map update and switches its entire fleet', async ({ page }) => {
+  const { data } = await mockTransit(page, { passio: true });
+  const passioBus = Object.values(ugaPassioFixture.buses.buses).flat().find(bus => String(bus.routeId) === '44886')!;
+  let current = false;
+  let probes = 0;
+  await page.route('**/api?url=*', route => {
+    const target = new URL(new URL(route.request().url()).searchParams.get('url')!);
+    if (target.searchParams.get('getBuses') !== '1') return route.fallback();
+    probes++;
+    return route.fulfill({ json: { buses: { central: [{ ...passioBus, busId: 78901, outdated: current ? 0 : 1 }] } } });
+  });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.goto('/routes/5750');
+  const markers = page.locator('.bus-marker');
+  await expect(markers).toHaveCount(1);
+  await expect(markers).toHaveAttribute('aria-label', /^Bus 17997,/);
+  await expect(page.locator('#route-vehicle-source')).toContainText('UGA portal');
+  await expect(markers.locator('.bus-pointer')).toHaveCSS('width', '26px');
+  await expect(markers.locator('svg')).toHaveCount(1);
+  await expect.poll(() => probes).toBe(3);
+  data.ugaVehicles[0].lastUpdate -= 121_000;
+  current = true;
+  await page.clock.runFor(10_100);
+  await expect.poll(() => probes).toBe(6);
+  await expect(markers).toHaveAttribute('aria-label', /^Bus 17997,/);
+  await page.clock.runFor(5000);
+  await expect(page.locator('#route-vehicle-source')).toContainText('Passio');
+  await expect(markers).toHaveCount(1);
+  await expect(markers).toHaveAttribute('aria-label', /^Bus passio:78901,/);
+  await expect(markers.locator('.bus-pointer.stale')).toHaveCount(0);
+  await expect(page.locator('.vehicle-card')).toHaveCount(1);
+});
+
 test('opening the planner immediately requests buses from every configured source',async({page})=>{
   const {calls}=await mockTransit(page,{passio:true});
   await page.clock.install();await page.clock.pauseAt(new Date());
@@ -842,8 +876,8 @@ for (const reduced of [false,true]) test(`bus updates ${reduced?'respect reduced
   });
   await page.clock.fastForward(16000); await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label',/, S/);
   const initial=await page.locator('.bus-marker').getAttribute('style');
-  await page.clock.runFor(600); const middle=await page.locator('.bus-marker').getAttribute('style');
-  await page.clock.runFor(1000); const final=await page.locator('.bus-marker').getAttribute('style');
+  await page.clock.runFor(1800); const middle=await page.locator('.bus-marker').getAttribute('style');
+  await page.clock.runFor(3600); const final=await page.locator('.bus-marker').getAttribute('style');
   if (reduced) {expect(initial).toBe(final);expect(middle).toBe(final);} else {expect(initial).not.toBe(middle);expect(middle).not.toBe(final);}
   await page.clock.runFor(2000); await expect(page.locator('.bus-marker')).toHaveAttribute('style',final!);
   await page.locator('nav [data-nav="routes"]').click(); await page.clock.runFor(1500); await expect(page.locator('.route-card')).toHaveCount(2);
