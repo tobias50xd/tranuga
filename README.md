@@ -8,7 +8,7 @@ TranUGA also runs on iOS and Android. The GitHub mobile workflow builds an Andro
 
 ## Use the app
 
-- **Main menu:** switch **Dark mode** on/off and use **Route lock**, which is on by default. Both settings are remembered on this device.
+- **Main menu:** **Dark mode** and **Route lock** are both on by default. Changes are remembered on this device.
 - **Routes:** star bus-line cards to pin active favorites first, followed by all other active routes, then inactive/unconfirmed routes. Inactive favorites keep their stars and stay in the inactive group. UGA has priority over city buses within each group. Active service has a light tint; unavailable and unconfirmed service appears grey with a text label. Search names/numbers, filter service, and select a route for its road trace, stops, direction variants, bus headings and observation ages. Select a stop for arrivals or to start a journey there.
 - **Plan a trip:** type a stop, place or address, then select an autocomplete hint with the pointer or arrow keys and Enter. You can also pick either point on the map, choose **My location** for the start, or enter decimal `latitude, longitude`. Editing a selected name clears its previous coordinates until you select again. Swap points, choose the access/egress walking limit, and get a bus-and-walk itinerary with waits, transfers and explicit timing assumptions. Calculation shows an indeterminate loading bar. The result map draws only the ridden portions of the selected lines, marks transfer stops with a purple ↔ symbol, and refreshes their bus markers. Notes stay collapsed below the map.
 - **Data reliability** lets you inspect responding sources, disagreements, and saved data. An open route displays bus positions from one feed and names it under **On the road**. **Sync all sources** crawls the selected network's route, stop, and prediction data. The trip planner uses the replicated network, which requires two compatible Passio nodes for vehicle positions.
@@ -34,7 +34,7 @@ Operator labels use explicit UGA `isAthensBus`/selected-provider metadata, with 
 
 Both buttons are in the main navigation on desktop and mobile and expose their on/off state with `aria-pressed`.
 
-**Dark mode** changes the complete app palette: route/service cards, notes, forms, address hints, journey results, footer and map controls/popups. Leaflet/OpenStreetMap stays in use; a local CSS filter darkens only the map tile layer while preserving route and bus colors and the map attribution. On the first visit, the app follows the device's light/dark preference. An explicit choice is saved under `tranuga.theme.v1` (`light` or `dark`) and applied before the app renders through [public/theme.js](public/theme.js). Switching the palette preserves the current view and selected trip points.
+**Dark mode** changes the palette for route cards, notes, forms, address hints, journey results, the footer and map controls. The map's tile layer is darkened while route and marker colors remain visible. The first visit uses the dark palette. An explicit choice is saved under `tranuga.theme.v1` (`light` or `dark`) and applied before the app renders. Switching the palette preserves the current view and selected trip points. [Theme initialization](public/theme.js)
 
 **Route lock starts on** and keeps navigation relative to the displayed route:
 
@@ -352,25 +352,25 @@ The planner records the exact directed pattern and boarding visit on each ride l
 
 Each boarding after the first gets a numbered **purple ↔ transfer marker** and a “Change at” label in the itinerary. Shared-stop transfers use one marker; walking transfers mark the alighting and next boarding stops. Walking stays dashed. The camera fits the traveled segments and stops; a bus elsewhere on a selected line does not widen the view. Editing endpoints clears old trip lines, transfer markers and journey buses.
 
-The calculate button shows **Calculating route…** with a spinner while feeds load and the journey is calculated. It returns to normal when calculation finishes. Inputs remain disabled during calculation, and the spinner stays still if reduced motion is enabled. Normal notes stay below maps in collapsed dropdowns. Full assumptions are also collapsed.
+The calculate button shows **Calculating route…** with an animated white bus icon while feeds load and the journey is calculated. Inputs remain disabled during calculation, and the icon stays still if reduced motion is enabled. Notes and full assumptions remain available in expandable panels.
 
 ### Route vehicle feeds and marker motion
 
 Each open route picks the feed with the best current coverage, using timestamps, plausible movement, and comparisons with nearby-in-time reports as evidence of quality. Different routes can pick different feeds. If the selected feed starts reporting grey buses, the next 15-second refresh can replace its entire fleet with a better feed that was checked in advance. The active feed appears under **On the road**. [Route feed selection and fallback rules](docs/replication.md#live-positions-on-an-open-route).
 
-Compact bus icons use the line color with a rotating heading pointer. Grey identifies last-known or unconfirmed positions. Passio's explicit current flag can color a clock-only fix, whose age still reads **Update time unavailable**. [vehicle-motion.ts](src/vehicle-motion.ts) eases the marker between accepted fixes and varies the duration with estimated speed. Planning, storage, update ages, and service decisions use the original observations.
+Round bus markers use the line color with a white arrow that rotates with the bus heading. Grey identifies last-known or unconfirmed positions. Passio's explicit current flag can color a clock-only fix, whose age still reads **Update time unavailable**. Selecting a stop in the map or stop list highlights its location with a blue ring. Planning, storage, update ages and service decisions use the original observations. [Vehicle motion](src/vehicle-motion.ts)
 
 | Guard | Display policy |
 | --- | --- |
-| Fresh, increasing observation times from the same feed and route | Ease toward the accepted fix for at most **3.6 s**, with shorter transitions for faster buses and shortest-angle heading rotation. |
-| Consecutive provider-current clock-only fixes from the same feed and route | Use the receipt interval to pace the display. The GPS measurement age remains unknown. |
-| Distance from the latest accepted GPS fix | At most **20 m** throughout the tween; larger moves first catch up to within that cap. |
+| Fresh, increasing observation times from the same feed and route | Move at a steady rate across the **15-second** refresh interval. Heading follows the shortest rotation. |
+| Consecutive provider-current clock-only fixes from the same feed and route | Use receipt times to validate the movement. The GPS measurement age remains unknown. |
+| Distance from the latest accepted GPS fix | At most **120 m** while moving. |
 | Observations more than 60 s apart, movement >120 m, or implied speed >25 m/s | Snap to the received position. |
 | Unconfirmed time, stale time (>2 min), time >1 s in the future, saved fallback, or route or feed change | Snap to the accepted fix. |
-| Repeated cached fix / out-of-order timestamp | Keep the current tween while accepting updated metadata / ignore the older fix, except a provider-current report replacing an explicitly outdated point (snap). |
+| Repeated position and heading / out-of-order timestamp | Keep the current animation while accepting updated metadata / ignore the older fix, except a provider-current report replacing an explicitly outdated point (snap). |
 | Reduced motion / hidden page / removed map | Snap or finish at the known fix; cancel animation frames and listeners. |
 
-Markers stop at the latest accepted fix. The 20 m cap measures display lag from that fix. Provider GPS error and network delay still affect how closely the dot matches the bus's actual position. The short animation follows a straight line between the displayed and accepted points, so it can cut across a corner within that cap. Each map discards its animation state on navigation.
+Markers stop at the latest accepted fix if the next update is delayed. The animation follows a straight line between the displayed and accepted points. Each map discards its animation state on navigation.
 
 ## Tests and verification
 

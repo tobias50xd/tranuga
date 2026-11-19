@@ -8,12 +8,14 @@ import { rideGeometry, journeyTransfers } from './journey-map';
 import { VehicleMotion } from './vehicle-motion';
 import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
 import { getCurrentLocation } from './location';
+export const VEHICLE_REFRESH_MS = 15_000;
 interface BusMarker { marker: L.Marker; motion: VehicleMotion }
 
 export class TransitMap {
   private map: L.Map;
   private routes = L.featureGroup();
   private stops = L.featureGroup();
+  private selectedStop = L.layerGroup();
   private vehicles = L.featureGroup();
   private journey = L.featureGroup();
   private points = L.layerGroup();
@@ -40,7 +42,7 @@ export class TransitMap {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(this.map);
     this.routes.addTo(this.map); this.stops.addTo(this.map); this.vehicles.addTo(this.map);
-    this.journey.addTo(this.map); this.points.addTo(this.map);
+    this.journey.addTo(this.map); this.points.addTo(this.map); this.selectedStop.addTo(this.map);
     this.userLocation.addTo(this.map); this.addLocationControl();
     this.map.on('click', event => { onPick?.({ lat: event.latlng.wrap().lat, lon: event.latlng.wrap().lng }); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.finishMotion(); }, { signal:this.lifetime.signal });
@@ -134,7 +136,7 @@ export class TransitMap {
   }
 
   showRoute(detail: RouteDetail, onStop: (stop: Stop) => void, direction?: string) {
-    this.routes.clearLayers(); this.stops.clearLayers(); this.journey.clearLayers();
+    this.routes.clearLayers(); this.stops.clearLayers(); this.selectedStop.clearLayers(); this.journey.clearLayers();
     const patterns = detail.patterns.filter(pattern => !direction || pattern.id === direction);
     for (const pattern of patterns) {
       const segments = pattern.shapeSegments?.length ? pattern.shapeSegments : [pattern.shape.length > 1 ? pattern.shape : pattern.stops];
@@ -142,7 +144,7 @@ export class TransitMap {
     }
     const visibleStops = direction ? [...new Map(patterns.flatMap(p => p.stops).map(s => [s.id, s])).values()] : detail.stops;
     for (const stop of visibleStops) {
-      const marker = L.circleMarker([stop.lat, stop.lon], { radius: 5, color: '#172721', weight: 2, fillColor: '#fff', fillOpacity: 1 });
+      const marker = L.circleMarker([stop.lat, stop.lon], { radius: 5, color: '#172721', weight: 2, fillColor: '#fff', fillOpacity: 1, className: 'route-stop-marker' });
       marker.bindTooltip(e(stop.name));
       marker.on('click', () => onStop(stop));
       marker.addTo(this.stops);
@@ -150,6 +152,14 @@ export class TransitMap {
     this.showVehicles(detail.vehicles, detail.route.color);
     const bounds = this.routes.getBounds().extend(this.stops.getBounds());
     this.fitRoute(bounds);
+  }
+
+  selectStop(stop: Stop) {
+    this.selectedStop.clearLayers();
+    const position: L.LatLngExpression = [stop.lat, stop.lon];
+    L.circleMarker(position, { radius: 13, color: '#7fbdff', weight: 2, fillColor: '#3388ee', fillOpacity: .28, interactive: false, className: 'selected-stop-halo' }).addTo(this.selectedStop);
+    L.circleMarker(position, { radius: 7, color: '#fff', weight: 2, fillColor: '#1d66cc', fillOpacity: 1, interactive: false, className: 'selected-stop-dot' }).addTo(this.selectedStop);
+    this.focus(stop);
   }
 
   showVehicles(vehicles: Vehicle[], color: string) { this.syncVehicles(vehicles, () => color); }
@@ -160,13 +170,13 @@ export class TransitMap {
       const key=bus.id; present.add(key);
       let state=this.busMarkers.get(key);
       if (!state) {
-        state={marker:L.marker([bus.lat,bus.lon],{icon:L.divIcon({className:'bus-marker',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(this.vehicles),motion:new VehicleMotion(bus)};
+        state={marker:L.marker([bus.lat,bus.lon],{icon:L.divIcon({className:'bus-marker',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(this.vehicles),motion:new VehicleMotion(bus, VEHICLE_REFRESH_MS)};
         this.busMarkers.set(key,state);
       } else state.motion.update(bus,now,this.reducedMotion.matches || document.hidden);
       const latest=state.motion.latest, stale=vehicleIsStale(latest,now);
       state.marker.setIcon(L.divIcon({
         className: 'bus-marker', iconSize: [26, 26], iconAnchor: [13, 13],
-        html: `<span class="bus-pointer ${stale ? 'stale' : ''}" style="--bus-color:${safeColor(color(latest))}"><span class="bus-bearing" aria-hidden="true"></span><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="16" rx="4"/><path d="M4 11h16M7 19v2m10-2v2M8 15h1m6 0h1"/></svg></span>`,
+        html: `<span class="bus-pointer ${stale ? 'stale' : ''}" style="--bus-color:${safeColor(color(latest))}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M12 3 20 19 12 15.2 4 19Z"/></svg></span>`,
       }));
       state.marker.getElement()?.setAttribute('aria-label',`Bus ${latest.id}, ${headingLabel(latest.heading)}`);
       const routeName=name(latest);
@@ -178,8 +188,14 @@ export class TransitMap {
     this.animateVehicles();
   }
   private placeBus(state: BusMarker, now: number) {
-    const point=state.motion.sample(now); state.marker.setLatLng([point.lat,point.lon]);
-    state.marker.getElement()?.querySelector<HTMLElement>('.bus-pointer')?.style.setProperty('--heading',`${point.heading}deg`);
+    const point = state.motion.sample(now);
+    const coordinate = L.latLng(point.lat, point.lon);
+    state.marker.setLatLng(coordinate);
+    const icon = state.marker.getElement();
+    if (!icon) return;
+    // Leaflet rounds marker positions to pixels. Keep the fractional position for slow movement at low zoom.
+    L.DomUtil.setPosition(icon, this.map.project(coordinate).subtract(this.map.getPixelOrigin()));
+    icon.querySelector<HTMLElement>('.bus-pointer')?.style.setProperty('--heading', `${point.heading}deg`);
   }
   private animateVehicles() {
     if (this.frame!==undefined || document.hidden || ![...this.busMarkers.values()].some(state=>state.motion.moving(Date.now()))) return;

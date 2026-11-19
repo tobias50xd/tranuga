@@ -126,9 +126,19 @@ test('selected route shows geometry, current stops, bus heading, arrivals and di
   await page.locator('.bus-marker').click();
   await expect(page.locator('.leaflet-popup')).toContainText('Heading E');
   await page.getByLabel('Route direction', { exact: true }).selectOption({ index: 1 });
-  await page.locator('.stop-list button').first().click();
+  const stopButtons = page.locator('.stop-list button');
+  await stopButtons.first().click();
+  await expect(stopButtons.first()).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.selected-stop-halo')).toBeVisible();
   await expect(page.locator('.stop-arrivals')).toContainText('Predicted');
   await expect(page.locator('.stop-arrivals')).toContainText('3 min');
+  await page.locator('.route-stop-marker').nth(1).click();
+  await expect(stopButtons.first()).toHaveAttribute('aria-pressed', 'false');
+  await expect(stopButtons.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.selected-stop-halo')).toHaveCount(1);
+  await page.getByLabel('Route direction', { exact: true }).selectOption({ index: 0 });
+  await expect(page.locator('.selected-stop-halo')).toHaveCount(0);
+  await stopButtons.first().click();
   expect(calls.some(url => url.includes('/stop_'))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Start a trip here' }).click();
@@ -455,12 +465,14 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   const button = page.locator('#find-trip');
   const progress = button.getByRole('progressbar', { name: 'Route calculation' });
+  const bus = button.locator('.trip-bus-icon');
   await expect(progress).toBeVisible();
   await expect(button).toHaveAttribute('aria-busy', 'true');
-  await expect(progress).toHaveCSS('animation-name', 'route-spinner');
+  await expect(bus).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(bus).toHaveCSS('animation-name', 'trip-bus-drive');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(progress).toHaveCSS('animation-name', 'none');
-  await expect(progress).toBeVisible();
+  await expect(bus).toHaveCSS('animation-name', 'none');
+  await expect(bus).toBeVisible();
   await expect(button).toContainText('Calculating route…');
   await expect(page.locator('#trip-origin')).toBeDisabled();
   await expect(page.locator('#swap')).toBeDisabled();
@@ -702,26 +714,29 @@ test('travel notes expose useful categories and preserve original warnings in so
 });
 
 test('dark mode updates every view, keeps trip points, and restores the saved palette', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
   await mockTransit(page); await page.goto('/');
   const theme = page.getByRole('button', { name:/^Dark mode/ });
-  await expect(theme).toHaveAttribute('aria-pressed', 'false');
+  await expect(theme).toHaveAttribute('aria-pressed', 'true');
+  const dark = await page.locator('html').evaluate(el => getComputedStyle(el).backgroundColor);
+  await theme.click(); await expect(theme).toHaveAttribute('aria-pressed', 'false');
   const light = await page.locator('html').evaluate(el => getComputedStyle(el).backgroundColor);
-  await theme.click(); await expect(theme).toHaveAttribute('aria-pressed', 'true');
-  const dark = await page.locator('html').evaluate(el => getComputedStyle(el).backgroundColor); expect(dark).not.toBe(light);
+  expect(dark).not.toBe(light);
   await page.locator('nav [data-nav="plan"]').click();
   await page.locator('#trip-origin').fill('33.948,-83.377');
+  await theme.click();
   await expect(page.locator('.leaflet-tile-pane')).toHaveCSS('filter', /invert\(1\)/);
   await theme.click(); await expect(page.locator('#trip-origin')).toHaveValue('33.948,-83.377');
-  await theme.click(); await page.reload();
-  await expect(theme).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.reload();
+  await expect(theme).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.locator('nav [data-nav="routes"]').click(); await page.locator('[data-route="5750"]').click();
   await expect(page.locator('.bus-marker')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('system dark preference and blocked storage both leave the menu usable', async ({ page }) => {
-  await page.emulateMedia({ colorScheme:'dark' });
+test('dark defaults and menu controls work with blocked storage', async ({ page }) => {
+  await page.emulateMedia({ colorScheme:'light' });
   await page.addInitScript(() => {
     Storage.prototype.getItem = () => { throw new Error('Storage blocked'); };
     Storage.prototype.setItem = () => { throw new Error('Storage blocked'); };
@@ -956,13 +971,19 @@ for (const reduced of [false,true]) test(`bus updates ${reduced?'respect reduced
   await page.route('**/api?url=*', async route=>{
     if (!new URL(route.request().url()).searchParams.get('url')?.endsWith('/Buses')) { await route.fallback(); return; }
     const at=await page.evaluate(()=>Date.now());
-    await route.fulfill({json:[{...data.ugaVehicles[0],longitude:data.ugaVehicles[0].longitude+.0003,heading:200,lastUpdate:at,proxyTimestamp:at}]});
+    await route.fulfill({json:[{...data.ugaVehicles[0],longitude:data.ugaVehicles[0].longitude+.00065,heading:200,lastUpdate:at,proxyTimestamp:at}]});
   });
   await page.clock.fastForward(16000); await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label',/, S/);
   const initial=await page.locator('.bus-marker').getAttribute('style');
-  await page.clock.runFor(1800); const middle=await page.locator('.bus-marker').getAttribute('style');
-  await page.clock.runFor(3600); const final=await page.locator('.bus-marker').getAttribute('style');
-  if (reduced) {expect(initial).toBe(final);expect(middle).toBe(final);} else {expect(initial).not.toBe(middle);expect(middle).not.toBe(final);}
+  await page.clock.runFor(4000); const middle=await page.locator('.bus-marker').getAttribute('style');
+  await page.clock.runFor(8000); const late=await page.locator('.bus-marker').getAttribute('style');
+  await page.clock.runFor(3500); const final=await page.locator('.bus-marker').getAttribute('style');
+  if (reduced) {
+    expect(initial).toBe(final); expect(middle).toBe(final);
+  } else {
+    expect(initial).not.toBe(middle); expect(middle).not.toBe(late); expect(late).not.toBe(final);
+    expect(middle).toMatch(/translate3d\(-?\d+\.\d+px/);
+  }
   await page.clock.runFor(2000); await expect(page.locator('.bus-marker')).toHaveAttribute('style',final!);
   await page.locator('nav [data-nav="routes"]').click(); await page.clock.runFor(1500); await expect(page.locator('.route-card')).toHaveCount(2);
 });

@@ -15,6 +15,23 @@ describe('bounded display interpolation',()=>{
   expect(motion.sample(now+60000)).toEqual(motion.sample(now+15000+MAX_TWEEN_MS));
   expect(first.updatedAt).toBe(now);expect(next.updatedAt).toBe(now+15000);
  });
+ it('keeps moving at a steady rate through the browser refresh interval', () => {
+  const interval = 15_000;
+  const first = bus();
+  const next = bus({ lon: -83.376, heading: 1, updatedAt: now + interval });
+  const motion = new VehicleMotion(first, interval);
+  const start = now + interval;
+  motion.update(next, start);
+  expect(motion.sample(start).lon).toBe(first.lon);
+  const firstQuarter = motion.sample(start + interval / 4);
+  const halfway = motion.sample(start + interval / 2);
+  expect(firstQuarter.lon - first.lon).toBeCloseTo(halfway.lon - firstQuarter.lon, 10);
+  expect(motion.sample(start + 14_000).lon).toBeGreaterThan(halfway.lon);
+  motion.update({ ...next, updatedAt: start + 14_000 }, start + 14_000);
+  expect(motion.moving(start + interval)).toBe(false);
+  expect(motion.sample(start + interval).lon).toBe(next.lon);
+  expect(motion.sample(start + 2 * interval).lon).toBe(next.lon);
+ });
  it('bounds every displayed frame to 20 m from the latest received fix, even during retargeting',()=>{
   const motion=new VehicleMotion(bus()),next=bus({lon:-83.376,updatedAt:now+15000});motion.update(next,now+15000);
   for(let at=0;at<=1500;at+=25)expect(distanceMeters(motion.sample(now+15000+at),next)).toBeLessThanOrEqual(MAX_DISPLAY_LAG_METERS+.01);

@@ -4,6 +4,7 @@ import { vehicleIsStale } from './vehicle-selection';
 
 export const MAX_DISPLAY_LAG_METERS = 20;
 export const MAX_TWEEN_MS = 3600;
+const MAX_OBSERVATION_STEP_METERS = 120;
 export interface MotionPoint extends Coordinate { heading: number }
 const point = (bus: Vehicle): MotionPoint => ({ lat:bus.lat, lon:bus.lon, heading:Number.isFinite(bus.heading)?bus.heading:0 });
 const mix = (from: MotionPoint, to: MotionPoint, ratio: number): MotionPoint => ({ lat:from.lat+(to.lat-from.lat)*ratio, lon:from.lon+(((to.lon-from.lon+540)%360)-180)*ratio, heading:(from.heading+(((to.heading-from.heading+540)%360)-180)*ratio+360)%360 });
@@ -16,11 +17,12 @@ export class VehicleMotion {
   private to: MotionPoint;
   private start = 0;
   private duration = 0;
-  constructor(bus: Vehicle) { this.latest=bus; this.from=this.to=point(bus); }
+  constructor(bus: Vehicle, private refreshIntervalMs?: number) { this.latest=bus; this.from=this.to=point(bus); }
   sample(now: number): MotionPoint {
     if (!this.moving(now)) return { ...this.to };
     const progress = Math.max(0, (now - this.start) / this.duration);
-    return mix(this.from, this.to, progress * progress * (3 - 2 * progress));
+    const ratio = this.refreshIntervalMs === undefined ? progress * progress * (3 - 2 * progress) : progress;
+    return mix(this.from, this.to, ratio);
   }
   moving(now: number) { return now < this.start+this.duration; }
   finish() { this.from=this.to; this.duration=0; }
@@ -29,10 +31,10 @@ export class VehicleMotion {
     const sameSource = prior.sources?.[0]?.source === bus.sources?.[0]?.source;
     if (sameSource && bus.updatedAt !== undefined && prior.updatedAt !== undefined && bus.updatedAt < prior.updatedAt
       && !(vehicleIsStale(prior, now) && !vehicleIsStale(bus, now))) return;
-    // Identical cached fixes do not restart a tween.
-    if (bus.lat===prior.lat && bus.lon===prior.lon && bus.updatedAt===prior.updatedAt && bus.heading===prior.heading) {
+    // A repeated position and heading keep the same arrival time for an in-progress tween.
+    if (bus.lat === prior.lat && bus.lon === prior.lon && bus.heading === prior.heading) {
       this.latest=bus;
-      if (!sameSource || bus.routeId !== prior.routeId || vehicleIsStale(bus, now)) this.finish();
+      if (reducedMotion || !sameSource || bus.routeId !== prior.routeId || vehicleIsStale(bus, now)) this.finish();
       return;
     }
     const current = this.sample(now), at = motionTime(bus), priorAt = motionTime(prior);
@@ -42,12 +44,14 @@ export class VehicleMotion {
       && now - time <= 120_000 && !vehicleIsStale(value, now);
     const animate = !reducedMotion && sameSource && bus.id === prior.id && bus.routeId === prior.routeId
       && (bus.updatedAt === undefined) === (prior.updatedAt === undefined)
-      && gap > 0 && gap <= 60_000 && fresh(bus, at) && fresh(prior, priorAt) && distance <= 120 && speed <= 25;
+      && gap > 0 && gap <= 60_000 && fresh(bus, at) && fresh(prior, priorAt) && distance <= MAX_OBSERVATION_STEP_METERS && speed <= 25;
     this.latest=bus; this.to=point(bus); this.start=now;
     if (!animate) { this.from=this.to; this.duration=0; return; }
     const remaining=distanceMeters(current,this.to);
-    this.from=remaining>MAX_DISPLAY_LAG_METERS ? mix(this.to,current,MAX_DISPLAY_LAG_METERS/remaining) : current;
-    const visibleDistance = Math.min(remaining, MAX_DISPLAY_LAG_METERS);
-    this.duration = Math.min(MAX_TWEEN_MS, gap * .6, Math.max(450, visibleDistance / Math.max(2, speed) * 1000));
+    if (remaining === 0 && current.heading === this.to.heading) { this.from=this.to; this.duration=0; return; }
+    const maxLag = this.refreshIntervalMs === undefined ? MAX_DISPLAY_LAG_METERS : MAX_OBSERVATION_STEP_METERS;
+    this.from = remaining > maxLag ? mix(this.to, current, maxLag / remaining) : current;
+    const visibleDistance = Math.min(remaining, maxLag);
+    this.duration = this.refreshIntervalMs ?? Math.min(MAX_TWEEN_MS, gap * .6, Math.max(450, visibleDistance / Math.max(2, speed) * 1000));
   }
 }

@@ -7,8 +7,8 @@ const NETWORK_KEY = 'tranuga.network.v1';
 export type Theme = 'light' | 'dark';
 interface PreferenceStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 function browserStorage(): PreferenceStorage | undefined { try { return globalThis.localStorage; } catch { return undefined; } }
-export function readPreferences(storage = browserStorage(), systemDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches) {
-  let theme: Theme = systemDark ? 'dark' : 'light', routeLocked = true;
+export function readPreferences(storage = browserStorage()) {
+  let theme: Theme = 'dark', routeLocked = true;
   try {
     const savedTheme = storage?.getItem(THEME_KEY);
     if (savedTheme === 'dark' || savedTheme === 'light') theme = savedTheme;

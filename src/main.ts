@@ -3,7 +3,7 @@ import { UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from
 import { createTransitService, knownStops, ATHENS_INFO_AGENCY, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
 import type { RouteVehicleSnapshot, RouteVehicleTracker } from './replication/route-vehicles';
 import { planJourney, parseCoordinate, type Journey } from './planner';
-import { TransitMap } from './map';
+import { TransitMap, VEHICLE_REFRESH_MS } from './map';
 import { renderNotes, compactNote } from './notes';
 import { Favorites } from './favorites';
 import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-presentation';
@@ -13,6 +13,11 @@ import { getCurrentLocation } from './location';
 import { readNetwork, readPreferences, saveNetwork, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
 import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
 import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehicleAge, headingLabel } from './ui';
+
+const tripBusIcon = `<svg class="trip-bus-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <path fill-rule="evenodd" d="M4.5 5h12.3a3 3 0 0 1 2.5 1.35l2.05 3.08c.43.65.65 1.42.65 2.2V16a2 2 0 0 1-2 2h-.82a3 3 0 0 0-5.66 0H9.48a3 3 0 0 0-5.66 0H3a1 1 0 0 1-1-1V7.5A2.5 2.5 0 0 1 4.5 5ZM5 8h4v4H5V8Zm6 0h4v4h-4V8Zm6 0h.1c.34 0 .65.17.84.45l1.55 2.33c.24.36.41.78.46 1.22H17V8Z"/>
+  <circle cx="6.65" cy="19" r="1.85"/><circle cx="16.35" cy="19" r="1.85"/>
+</svg>`;
 
 const preferences = readPreferences();
 let routeLocked = preferences.routeLocked;
@@ -41,7 +46,6 @@ let pickMode: 'origin' | 'destination' | undefined;
 let operation = 0;
 let pollingOperation: number | undefined;
 let stopRouteVehicleUpdates: (() => void) | undefined;
-const VEHICLE_REFRESH_MS = 15_000;
 const ROUTE_PROBE_LEAD_MS = 5_000;
 let catalogTime: number | undefined;
 let network: Network | undefined;
@@ -118,7 +122,6 @@ function setRouteLoading(active: boolean) {
   const button=$<HTMLButtonElement>('#find-trip'); button.setAttribute('aria-busy',String(active));
   button.querySelector('.calculation-label')!.textContent=active?'Calculating route…':'Find quickest bus trip';
   $('#trip-progress').hidden=!active;
-  button.querySelector<HTMLElement>('.submit-arrow')!.hidden=active;
   $('#trip-form').setAttribute('aria-busy',String(active));
 }
 function renderReplication() {
@@ -160,7 +163,7 @@ async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
   setView('routes'); const token = operation;
   main.innerHTML = `<section class="catalog container">
     <div class="eyebrow">YOUR NEXT CONNECTION</div>
-    <div class="page-heading"><div><h1 tabindex="-1">Athens, in motion<span>.</span></h1><p>Find your route. See your bus. Go somewhere.</p></div><button id="catalog-plan" class="button primary">Plan a trip <span aria-hidden="true">↗</span></button></div>
+    <div class="page-heading"><div><h1 tabindex="-1">Athens, in motion<span>.</span></h1><p>Find your route. See your bus. Go somewhere.</p></div><button id="catalog-plan" class="button primary">${tripBusIcon} Plan a trip</button></div>
     <div class="catalog-toolbar"><div><h2>Explore the routes</h2><span id="route-count" class="muted">Connecting to ${e(agency.name)}…</span></div><div class="filters"><label class="search"><span aria-hidden="true">⌕</span><input id="route-search" type="search" placeholder="Search routes" aria-label="Search routes"></label><label class="toggle"><input type="checkbox" id="active-only"> Active only</label><button id="refresh-routes" class="icon-button" aria-label="Refresh routes">↻</button></div></div>
     <div id="catalog-status" role="status"></div><div id="routes" class="route-grid" aria-label="Bus routes"><div class="loading">Loading available routes…</div></div>
     <aside class="catalog-note"><span class="note-number">01 — 02 — GO</span><div><h3>A little less waiting. A little more going.</h3><p>Select a route for its stops and bus positions, or let the trip planner find a connection from any point on the map.</p></div><span class="note-arrow" aria-hidden="true">↗</span></aside>
@@ -227,11 +230,11 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
       <div class="route-notes"><div id="service-messages">${warning(result.messages, 'service')}</div><div id="route-warnings"></div></div>
       <div class="vehicles-section"><h2>On the road</h2><p class="muted" id="route-vehicle-source"></p>${service.hasPassioFor(result.route.id) ? '<form id="bus-search" class="bus-search"><label for="bus-query">Find a bus by fleet number</label><input id="bus-query" placeholder="Bus number" required maxlength="40"><button class="button" type="submit">Find bus</button></form><div id="bus-search-result" role="status"></div>' : ''}<div id="vehicle-list" class="vehicle-list"></div></div>`;
     map = new TransitMap($('#route-map'), agency.center || center, undefined, routeLocked, setRouteLock);
-    map.showRoute(result, stop => void showStop(stop));
+    map.showRoute(result, stop => void showStop(stop, false));
     $<HTMLSelectElement>('#route-direction').onchange = event => {
       selectedDirection = (event.target as HTMLSelectElement).value;
       stopOperation++; selectedStop = undefined; $('#stop-detail').innerHTML = '';
-      map?.showRoute(detail!, stop => void showStop(stop), selectedDirection);
+      map?.showRoute(detail!, stop => void showStop(stop, false), selectedDirection);
       renderStops();
     };
     renderStops(); renderVehicles(snapshot); focusTitle();
@@ -255,17 +258,20 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
 function renderStops() {
   if (!detail) return;
   const stops = (selectedDirection ? detail.patterns.find(pattern => pattern.id === selectedDirection)?.stops || [] : detail.stops);
-  $('#route-stops').innerHTML = `<p class="stop-count">${stops.length} stops · select one for arrivals</p><ol class="stop-list">${stops.map((stop, index) => `<li><button data-stop="${e(stop.id)}"><span class="stop-sequence">${index + 1}</span><span>${e(stop.name)}</span><span aria-hidden="true">↗</span></button></li>`).join('')}</ol>`;
+  $('#route-stops').innerHTML = `<p class="stop-count">${stops.length} stops · select one for arrivals</p><ol class="stop-list">${stops.map((stop, index) => `<li><button data-stop="${e(stop.id)}" aria-pressed="false"><span class="stop-sequence">${index + 1}</span><span>${e(stop.name)}</span><span aria-hidden="true">↗</span></button></li>`).join('')}</ol>`;
   document.querySelectorAll<HTMLButtonElement>('[data-stop]').forEach(button => button.onclick = () => {
     const stop = stops.find(s => s.id === button.dataset.stop); if (stop) void showStop(stop);
   });
 }
 
-async function showStop(stop: Stop) {
+async function showStop(stop: Stop, scrollToArrivals = true) {
   const token = operation; const stopToken = ++stopOperation;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('#route-stops [data-stop]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.stop === stop.id));
+  }
   $('#stop-detail').innerHTML = `<div class="stop-arrivals"><h3>${e(stop.name)}</h3><p>Loading arrivals…</p></div>`;
-  $('#stop-detail').scrollIntoView({ block: 'nearest' });
-  map?.focus(stop);
+  if (scrollToArrivals) $('#stop-detail').scrollIntoView({ block: 'nearest' });
+  map?.selectStop(stop);
   try {
     const result = await service.getStop(stop.id);
     if (token !== operation || stopToken !== stopOperation || view !== 'detail') return;
@@ -306,7 +312,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button"><span aria-hidden="true">⌖</span> My location</button></div>
       ${pointField('destination', 'Destination', destinationLabel || (destination ? coordinates(destination) : ''))}<div class="field-actions"><button type="button" id="pick-destination" class="text-button">⊕ Pick on map</button><button type="button" id="swap" class="text-button">⇅ Swap</button></div>
       <label class="field-label" for="max-walk">Maximum walk to / from the bus</label><select id="max-walk"><option value="800">800 m · about 10 minutes</option><option value="1200" selected>1.2 km · about 15 minutes</option><option value="2000">2 km · about 25 minutes</option></select>
-      <button class="button primary full" type="submit" id="find-trip"><span id="trip-progress" class="calculation-spinner" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span><span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span></button>
+      <button class="button primary full" type="submit" id="find-trip">${tripBusIcon}<span class="calculation-label">Find quickest bus trip</span><span id="trip-progress" class="sr-only" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span></button>
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
       <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
