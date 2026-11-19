@@ -1,6 +1,6 @@
 import './style.css';
 import { UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from './api';
-import { createTransitService, knownStops, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
+import { createTransitService, knownStops, ATHENS_INFO_AGENCY, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
 import type { RouteVehicleSnapshot, RouteVehicleTracker } from './replication/route-vehicles';
 import { planJourney, parseCoordinate, type Journey } from './planner';
 import { TransitMap } from './map';
@@ -10,7 +10,7 @@ import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-
 import { uniqueVehicles, vehicleAgeWarnings, vehicleIsStale } from './vehicle-selection';
 import { PlaceInput, PlaceSearch } from './places';
 import { getCurrentLocation } from './location';
-import { readPreferences, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
+import { readNetwork, readPreferences, saveNetwork, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
 import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
 import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehicleAge, headingLabel } from './ui';
 
@@ -19,9 +19,12 @@ let routeLocked = preferences.routeLocked;
 document.documentElement.dataset.theme = preferences.theme;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const center = { lat: 33.948, lon: -83.377 };
-let agency: Agency = GEORGIA_AGENCY;
+const presetNetworks = [GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY, ATHENS_INFO_AGENCY];
+let agency = readNetwork(presetNetworks) ?? GEORGIA_AGENCY;
 let service = createTransitService(agency);
 let routes: Route[] = [];
+let routeQuery = '';
+let activeRoutesOnly = false;
 let view: 'routes' | 'detail' | 'plan' | 'agencies' = 'routes';
 let detail: RouteDetail | undefined;
 let map: TransitMap | undefined;
@@ -29,6 +32,7 @@ let origin: Coordinate | undefined;
 let destination: Coordinate | undefined;
 let originLabel = '';
 let destinationLabel = '';
+let maxWalkMeters = 1200;
 let pointInputs: Partial<Record<'origin' | 'destination', PlaceInput>> = {};
 const placeSearch = new PlaceSearch();
 const favorites = new Favorites();
@@ -163,8 +167,11 @@ async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
   </section>`;
   $('#catalog-plan').onclick = () => showPlanner();
   $('#refresh-routes').onclick = () => void showRoutes(true);
-  $('#route-search').oninput = renderRouteCards;
-  $('#active-only').onchange = renderRouteCards;
+  const search = $<HTMLInputElement>('#route-search');
+  const activeOnly = $<HTMLInputElement>('#active-only');
+  search.value = routeQuery; activeOnly.checked = activeRoutesOnly;
+  search.oninput = () => { routeQuery = search.value; renderRouteCards(); };
+  activeOnly.onchange = () => { activeRoutesOnly = activeOnly.checked; renderRouteCards(); };
   focusTitle();
   if (!routes.length || refresh) {
     try {
@@ -185,10 +192,9 @@ async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
 
 function renderRouteCards() {
   if (view !== 'routes') return;
-  const query = $<HTMLInputElement>('#route-search').value.trim().toLowerCase();
-  const activeOnly = $<HTMLInputElement>('#active-only').checked;
+  const query = routeQuery.trim().toLowerCase();
   const confirmed = (route: Route) => routeState(route) === 'active';
-  const filtered = sortRoutes(routes, favorites.routeIds(agency, routes)).filter(route => (!activeOnly || confirmed(route)) && `${route.name} ${route.shortName} ${route.id}`.toLowerCase().includes(query));
+  const filtered = sortRoutes(routes, favorites.routeIds(agency, routes)).filter(route => (!activeRoutesOnly || confirmed(route)) && `${route.name} ${route.shortName} ${route.id}`.toLowerCase().includes(query));
   $('#route-count').textContent = `${routes.length} routes · ${routes.filter(confirmed).length} active${catalogTime ? ` · Checked ${clockTime(catalogTime)}` : ''}`;
   $('#routes').innerHTML = filtered.map(route => `<article class="route-card route-${routeState(route)}${favorites.has(agency,route.id) ? ' is-favorite' : ''}" style="--route-color:${safeColor(route.color)}"><button class="route-open" data-route="${e(route.id)}">
     <div class="card-top"><span class="route-badge">${e(route.shortName || route.id)}</span><span class="service-state ${confirmed(route) ? 'active' : ''}"><i></i>${routeStateLabel[routeState(route)]}</span></div>
@@ -224,6 +230,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
     map.showRoute(result, stop => void showStop(stop));
     $<HTMLSelectElement>('#route-direction').onchange = event => {
       selectedDirection = (event.target as HTMLSelectElement).value;
+      stopOperation++; selectedStop = undefined; $('#stop-detail').innerHTML = '';
       map?.showRoute(detail!, stop => void showStop(stop), selectedDirection);
       renderStops();
     };
@@ -299,12 +306,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       ${pointField('origin', 'Start', originLabel || (origin ? coordinates(origin) : ''))}<div class="field-actions"><button type="button" id="pick-origin" class="text-button">⊕ Pick on map</button><button type="button" id="locate" class="text-button"><span aria-hidden="true">⌖</span> My location</button></div>
       ${pointField('destination', 'Destination', destinationLabel || (destination ? coordinates(destination) : ''))}<div class="field-actions"><button type="button" id="pick-destination" class="text-button">⊕ Pick on map</button><button type="button" id="swap" class="text-button">⇅ Swap</button></div>
       <label class="field-label" for="max-walk">Maximum walk to / from the bus</label><select id="max-walk"><option value="800">800 m · about 10 minutes</option><option value="1200" selected>1.2 km · about 15 minutes</option><option value="2000">2 km · about 25 minutes</option></select>
-      <button class="button primary full" type="submit" id="find-trip">
-        <span id="trip-progress" class="calculation-motion" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden>
-          <span class="calculation-travel" aria-hidden="true"><span class="calculation-bus"><span class="calculation-windows"></span><span class="calculation-wheel"></span><span class="calculation-wheel"></span></span></span>
-        </span>
-        <span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span>
-      </button>
+      <button class="button primary full" type="submit" id="find-trip"><span id="trip-progress" class="calculation-spinner" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span><span class="calculation-label">Find quickest bus trip</span><span class="submit-arrow" aria-hidden="true">↗</span></button>
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
       <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
@@ -339,6 +341,9 @@ function showPlanner(historyMode: HistoryMode = 'push') {
   }
   $('#pick-origin').onclick = () => choosePoint('origin');
   $('#pick-destination').onclick = () => choosePoint('destination');
+  $('.planner-page').onkeydown = event => {
+    if (event.key === 'Escape' && pickMode) choosePoint(pickMode);
+  };
   $('#swap').onclick = () => {
     [origin, destination] = [destination, origin]; [originLabel, destinationLabel] = [destinationLabel, originLabel];
     pointInputs.origin?.setValue(originLabel); pointInputs.destination?.setValue(destinationLabel);
@@ -346,6 +351,9 @@ function showPlanner(historyMode: HistoryMode = 'push') {
     map?.showPoints(origin, destination);
   };
   $('#locate').onclick = () => void locateUser();
+  const maxWalk = $<HTMLSelectElement>('#max-walk');
+  maxWalk.value = String(maxWalkMeters);
+  maxWalk.onchange = () => { maxWalkMeters = Number(maxWalk.value); resetTripResult(); };
   $<HTMLFormElement>('#trip-form').onsubmit = event => { event.preventDefault(); void findTrip(); };
   document.querySelector<HTMLButtonElement>('#compare-provider')?.addEventListener('click', async () => {
     const token = operation; const revision = ++comparisonRevision;
@@ -362,9 +370,12 @@ function showPlanner(historyMode: HistoryMode = 'push') {
 function resetTripResult() { displayedJourney = undefined; $('#trip-notes').innerHTML = ''; $('#trip-result').innerHTML = ''; $('#trip-status').innerHTML = ''; comparisonRevision++; const comparison = document.querySelector('#operator-result'); if (comparison) comparison.innerHTML = ''; map?.clearJourney(); }
 
 function choosePoint(kind: 'origin' | 'destination') {
-  pickMode = kind;
-  $('#map-instruction').textContent = `Click the map to choose your ${kind === 'origin' ? 'start' : 'destination'}.`;
-  announce($('#map-instruction').textContent!);
+  pickMode = pickMode === kind ? undefined : kind;
+  const instruction = pickMode ? `Click the map to choose your ${kind === 'origin' ? 'start' : 'destination'}.`
+    : displayedJourney ? 'Used ride segments only · ↔ transfer stops · dashed lines: estimates'
+    : 'Choose a start and destination to get going.';
+  $('#map-instruction').textContent = instruction;
+  announce(pickMode ? instruction : 'Map selection canceled.');
 }
 
 async function locateUser() {
@@ -393,9 +404,10 @@ async function findTrip() {
   $('#trip-result').innerHTML = ''; $('#trip-status').textContent = 'Comparing available routes, arrivals and transfers…';
   try {
     // Refresh the network for each search so old predictions are not reused as current.
-    const currentNetwork = await service.getNetwork(); network = currentNetwork;
+    const currentNetwork = await service.getNetwork();
     if (token !== operation) return;
-    const result = planJourney(currentNetwork, from, to, { now: Date.now(), maxWalkMeters: Number($<HTMLSelectElement>('#max-walk').value) });
+    network = currentNetwork;
+    const result = planJourney(currentNetwork, from, to, { now: Date.now(), maxWalkMeters });
     $('#trip-status').innerHTML = ''; $('#trip-notes').innerHTML = warning(currentNetwork.messages, 'service') + warning(currentNetwork.warnings);
     if (result.status === 'unavailable') { $('#trip-result').innerHTML = `<div class="empty"><h3>No bus connection found</h3><p>${e(result.reason)}</p><p>Try a point closer to a stop or increase the walking limit.</p></div>`; return; }
     const trip = result.journey; displayedJourney = trip; let rideNumber = 0;
@@ -431,8 +443,20 @@ async function showAgencies(historyMode: HistoryMode = 'push') {
   $('#nearby-agencies').onclick = () => void searchAgencies('nearby');
   $<HTMLFormElement>('#code-form').onsubmit = event => { event.preventDefault(); void searchAgencies('code'); };
   focusTitle();
-  try { const result = await discoverAgencies(); if (token !== operation || revision !== agencyRevision) return; agencyChoices = result; $('#agency-status').textContent = `${result.length} agencies in the directory`; renderAgencies(); }
-  catch (error) { if (token === operation && revision === agencyRevision) $('#agency-status').innerHTML = `${warning([errorMessage(error)], 'error')}<button id="retry-agencies" class="button">Retry directory</button>`; document.querySelector<HTMLButtonElement>('#retry-agencies')?.addEventListener('click', () => void showAgencies()); }
+  const available = [ATHENS_INFO_AGENCY];
+  if (agency.kind === 'infopoint' && agency.id !== ATHENS_INFO_AGENCY.id) available.push(agency);
+  agencyChoices = available; renderAgencies();
+  try {
+    const result = await discoverAgencies();
+    if (token !== operation || revision !== agencyRevision) return;
+    agencyChoices = [...new Map([...available, ...result].map(item => [item.id, item])).values()];
+    $('#agency-status').textContent = `${result.length} agencies in the directory`;
+    renderAgencies();
+  } catch (error) {
+    if (token !== operation || revision !== agencyRevision) return;
+    $('#agency-status').innerHTML = `${warning([errorMessage(error)], 'error')}<button id="retry-agencies" class="button">Retry directory</button>`;
+    $('#retry-agencies').onclick = () => void showAgencies();
+  }
 }
 
 async function searchAgencies(kind: 'nearby' | 'code') {
@@ -453,7 +477,10 @@ function renderAgencies() {
 }
 
 async function selectAgency(choice: Agency) {
-  agency = choice.kind === 'uga' ? GEORGIA_AGENCY : choice; service = createTransitService(agency); routes = []; network = undefined; detail = undefined; origin = undefined; destination = undefined; originLabel = ''; destinationLabel = '';
+  const next = choice.kind === 'uga' ? GEORGIA_AGENCY : choice;
+  if (next.kind !== agency.kind || next.id !== agency.id) { routeQuery = ''; activeRoutesOnly = false; maxWalkMeters = 1200; }
+  agency = next; saveNetwork(agency);
+  service = createTransitService(agency); routes = []; network = undefined; detail = undefined; origin = undefined; destination = undefined; originLabel = ''; destinationLabel = '';
   $('#agency-name').textContent = agency.name;
   $('#sync-status').textContent = ''; $('#provider-details').textContent = ''; $<HTMLButtonElement>('#sync-data').disabled = false; renderReplication();
   await showRoutes(true);

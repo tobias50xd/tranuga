@@ -14,7 +14,7 @@ TranUGA also runs on iOS and Android. The GitHub mobile workflow builds an Andro
 - **Data reliability** lets you inspect responding sources, disagreements, and saved data. An open route displays bus positions from one feed and names it under **On the road**. **Sync all sources** crawls the selected network's route, stop, and prediction data. The trip planner uses the replicated network, which requires two compatible Passio nodes for vehicle positions.
 - **Provider tools:** where Passio supplies them, open provider information/version/route groups, search for a specific bus, view a stop's provider timetable, or explicitly request a separate provider journey comparison.
 - **Map location:** press the crosshair **Show my location** button above the zoom controls on either map to show a blue position marker, its reported accuracy area, and center the map on yourself. It keeps your selected trip points and results.
-- **Networks:** choose the combined Georgia network, UGA Passio, Athens Public Transit in Ohio or a reviewed InfoPoint agency. Search the directory, locate a nearby agency or enter an authority code. Route lock follows the displayed route in any network.
+- **Networks:** choose the combined Georgia network, UGA Passio, Athens Public Transit in Ohio or an InfoPoint agency such as Athens-Clarke County. Search the directory, locate a nearby agency or enter an authority code. Your selected network is remembered across reloads. Route lock follows the displayed route in any network.
 
 All clock times use the device timezone except provider timetable clock labels, which retain the operator's stated IANA timezone. Missing dates, route identities and durations remain unknown rather than being invented.
 
@@ -352,7 +352,7 @@ The planner records the exact directed pattern and boarding visit on each ride l
 
 Each boarding after the first gets a numbered **purple ↔ transfer marker** and a “Change at” label in the itinerary. Shared-stop transfers use one marker; walking transfers mark the alighting and next boarding stops. Walking stays dashed. The camera fits the traveled segments and stops; a bus elsewhere on a selected line does not widen the view. Editing endpoints clears old trip lines, transfer markers and journey buses.
 
-The calculate button shows **Calculating route…** as a small bus drives across it while feeds load and the journey is calculated. It returns to normal when calculation finishes. Inputs remain disabled during calculation, and reduced-motion users see the bus parked. Normal notes stay below maps in collapsed dropdowns. Full assumptions are also collapsed.
+The calculate button shows **Calculating route…** with a spinner while feeds load and the journey is calculated. It returns to normal when calculation finishes. Inputs remain disabled during calculation, and the spinner stays still if reduced motion is enabled. Normal notes stay below maps in collapsed dropdowns. Full assumptions are also collapsed.
 
 ### Route vehicle feeds and marker motion
 

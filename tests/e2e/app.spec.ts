@@ -101,12 +101,18 @@ test('first page lists every route, searches, filters and refreshes', async ({ p
   expect(await page.locator('.route-card').first().evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(await page.locator('.route-card').last().evaluate(el => getComputedStyle(el).backgroundColor));
   await page.getByLabel('Search routes').fill('night');
   await expect(page.locator('.route-card')).toHaveCount(1);
-  await page.getByLabel('Search routes').fill('');
   await page.getByLabel('Active only').check();
-  await expect(page.locator('.route-card')).toHaveCount(1);
+  await expect(page.locator('.route-card')).toHaveCount(0);
+  const readsBefore = calls.filter(url => url.endsWith('/Routes')).length;
   await page.getByRole('button', { name: 'Refresh routes' }).click();
+  await expect.poll(() => calls.filter(url => url.endsWith('/Routes')).length).toBeGreaterThan(readsBefore);
+  await expect(page.getByLabel('Search routes')).toHaveValue('night');
+  await expect(page.getByLabel('Active only')).toBeChecked();
+  await expect(page.locator('#routes')).toContainText('No routes match your search.');
+  await page.getByLabel('Search routes').clear();
+  await expect(page.locator('.route-card')).toHaveCount(1);
+  await page.getByLabel('Active only').uncheck();
   await expect(page.locator('.route-card')).toHaveCount(2);
-  expect(calls.some(url => url.endsWith('/Routes'))).toBe(true);
 });
 
 test('selected route shows geometry, current stops, bus heading, arrivals and direction selector', async ({ page }) => {
@@ -257,10 +263,17 @@ test('plans a real directed bus connection between arbitrary coordinates', async
   await expect(page.locator('.leaflet-overlay-pane path').first()).toBeVisible();
   expect(calls.some(url => url.includes('routeTracking_5750'))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByLabel('Maximum walk to / from the bus').selectOption('800');
+  await expect(page.locator('.trip-summary')).toHaveCount(0);
+  await expect(page.locator('.journey-ride')).toHaveCount(0);
 });
 
 test('map picking and swapping preserve named points', async ({ page }) => {
   await mockTransit(page); await page.goto('/'); await page.locator('nav [data-nav="plan"]').click();
+  await page.locator('#pick-origin').click();
+  await page.keyboard.press('Escape');
+  await page.locator('#trip-map').click({ position: { x: 110, y: 150 } });
+  await expect(page.locator('#trip-origin')).toHaveValue('');
   await page.locator('#pick-origin').click();
   await page.locator('#trip-map').click({ position: { x: 110, y: 150 } });
   await expect(page.locator('#trip-origin')).not.toHaveValue('');
@@ -404,15 +417,20 @@ test('plan and route views support direct URLs and browser history', async ({ pa
 test('authority discovery, nearby and code lookup lead to InfoPoint maps and service alerts', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']); await context.setGeolocation({ latitude: 40.79, longitude: -77.87 });
   const { calls } = await mockTransit(page); await page.goto('/'); await page.getByRole('button', { name: 'Networks', exact: true }).click();
-  await expect(page.locator('.agency-card')).toHaveCount(1);
+  const cata = page.getByRole('button', { name: /CATA.*Explore routes/ });
+  await expect(cata).toBeVisible();
+  await expect(page.getByRole('button', { name: /Athens-Clarke County.*Explore routes/ })).toBeVisible();
   await page.getByRole('button', { name: 'Find nearby' }).click();
   await expect.poll(() => calls.some(url => url.includes('/Locate?Lat='))).toBe(true);
   await page.getByLabel('Authority code', { exact: true }).fill('CATA'); await page.getByRole('button', { name: 'Find by code' }).click();
   await expect.poll(() => calls.some(url => url.includes('includeHiddenPropertyCode='))).toBe(true);
-  await page.locator('.agency-card').click(); await expect(page.locator('.route-card')).toHaveCount(1);
+  await cata.click(); await expect(page.locator('.route-card')).toHaveCount(1);
   await page.locator('.route-card').click(); await expect(page.locator('.stop-list li')).not.toHaveCount(0);
   await expect(page.locator('#service-messages')).toContainText('Service notice');
   expect(calls.some(url => url.endsWith('Route51.kml'))).toBe(true);
+  await page.reload();
+  await expect(page.locator('#agency-name')).toHaveText('CATA');
+  await expect(page.locator('.stop-list li')).not.toHaveCount(0);
 });
 
 test('catalog failure is visible and retryable, and narrow screens do not overflow', async ({ page }) => {
@@ -437,30 +455,12 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   const button = page.locator('#find-trip');
   const progress = button.getByRole('progressbar', { name: 'Route calculation' });
-  const travel = progress.locator('.calculation-travel');
-  const bus = travel.locator('.calculation-bus');
   await expect(progress).toBeVisible();
   await expect(button).toHaveAttribute('aria-busy', 'true');
-  await expect(travel).toHaveCSS('animation-name', 'calculation-drive');
-  const [early, late] = await bus.evaluate(element => {
-    const travel = element.parentElement!;
-    const drive = travel.getAnimations()[0];
-    drive.pause();
-    const { left, width } = travel.parentElement!.getBoundingClientRect();
-    return [580, 1620].map(time => {
-      drive.currentTime = time;
-      const bus = element.getBoundingClientRect();
-      return (bus.left + bus.width / 2 - left) / width;
-    });
-  });
-  expect(early).toBeGreaterThan(0);
-  expect(early).toBeLessThan(.5);
-  expect(late).toBeGreaterThan(.5);
-  expect(late).toBeLessThan(1);
+  await expect(progress).toHaveCSS('animation-name', 'route-spinner');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(travel).toHaveCSS('animation-name', 'none');
-  await expect(bus).toHaveCSS('animation-name', 'none');
-  await expect(bus).toBeVisible();
+  await expect(progress).toHaveCSS('animation-name', 'none');
+  await expect(progress).toBeVisible();
   await expect(button).toContainText('Calculating route…');
   await expect(page.locator('#trip-origin')).toBeDisabled();
   await expect(page.locator('#swap')).toBeDisabled();
@@ -741,7 +741,7 @@ test('route lock defaults on, remembers its setting and keeps network choices av
   await expect(page.getByRole('button', { name:/^Athens lock/ })).toHaveCount(0);
   await page.locator('nav [data-nav="agencies"]').click();
   await expect(page.locator('#select-ohio')).toBeVisible(); await expect(page.locator('.network-tools')).toBeVisible();
-  await expect(page.locator('.agency-card')).toContainText('CATA');
+  await expect(page.getByRole('button', { name: /CATA.*Explore routes/ })).toBeVisible();
   expect(calls.some(url => url.includes('TransitAuthorities'))).toBe(true);
   await unlockRoute(page);
   await page.reload(); await expect(page.getByRole('button', { name:/^Route lock/ })).toHaveAttribute('aria-pressed', 'false');
@@ -892,6 +892,23 @@ test('only active favorites stay on top across reloads, with UGA priority within
   await page.reload(); await expect(page.locator('.route-card').last().locator('[data-route]')).toHaveAttribute('data-route','5741');
   await expect(page.locator('[data-favorite="5741"]')).toHaveAttribute('aria-pressed','true');
   await page.getByLabel('Active only').check(); await expect(page.locator('[data-route="5741"]')).toHaveCount(0);
+});
+
+test('restores the network and favorites saved by the shared web app', async ({ page }) => {
+  await mockTransit(page, { passio: true });
+  await page.addInitScript(() => {
+    if (localStorage.getItem('tranuga.mobile.preferences.v1')) return;
+    localStorage.setItem('tranuga.mobile.preferences.v1', JSON.stringify({
+      network: 'passio:5842', favorites: { 'passio:5842': ['66949'] },
+    }));
+  });
+  await page.goto('/routes');
+  await expect(page.locator('#agency-name')).toContainText('Ohio');
+  const favorite = page.locator('[data-favorite="66949"]');
+  await expect(favorite).toHaveAttribute('aria-pressed', 'true');
+  await favorite.click();
+  await page.reload();
+  await expect(favorite).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('a favorite moves between active and inactive groups as live service changes',async({page})=>{
