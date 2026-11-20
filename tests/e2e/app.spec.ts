@@ -468,10 +468,57 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   const bus = button.locator('.trip-bus-icon');
   await expect(progress).toBeVisible();
   await expect(button).toHaveAttribute('aria-busy', 'true');
+  await expect(button).toHaveAccessibleName('Calculating route…');
   await expect(bus).toHaveCSS('color', 'rgb(255, 255, 255)');
-  await expect(bus).toHaveCSS('animation-name', 'trip-bus-drive');
+  await expect.poll(() => button.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(2);
+  const cycle = await button.evaluate(element => {
+    const bus = element.querySelector<SVGSVGElement>('.trip-bus-icon')!;
+    const label = element.querySelector('.calculation-label')!;
+    const drive = bus.getAnimations()[0];
+    const letters = label.getAnimations()[0];
+    drive.pause(); letters.pause();
+    const lap = Number(drive.effect!.getTiming().duration);
+    const frames = (letters.effect as KeyframeEffect).getKeyframes();
+    const firstReveal = label.textContent!.length + 1;
+    const time = (index: number) => frames[index].computedOffset * lap * 2;
+    const artwork = bus.getBBox();
+    const scale = bus.getBoundingClientRect().width / bus.viewBox.baseVal.width;
+    const range = document.createRange();
+    range.setStart(label.firstChild!, 0);
+    range.setEnd(label.firstChild!, 1);
+    const letter = range.getBoundingClientRect();
+    const left = element.getBoundingClientRect().left + element.clientLeft;
+    const sample = (now: number) => {
+      drive.currentTime = now;
+      letters.currentTime = now;
+      const rear = bus.getBoundingClientRect().left + artwork.x * scale;
+      return { rear, front: rear + artwork.width * scale, clip: getComputedStyle(label).clipPath };
+    };
+    return {
+      left, right: left + element.clientWidth, letter: { left: letter.left, right: letter.right },
+      beforeHit: sample(time(1) - 1), hit: sample(time(1) + 1), secondHit: sample(time(2) + 1),
+      exit: sample(lap - 1), enter: sample(lap + 1),
+      beforeReveal: sample(time(firstReveal) - 1), reveal: sample(time(firstReveal) + 1),
+      secondReveal: sample(time(firstReveal + 1) + 1), complete: sample(lap * 2 - 1),
+    };
+  });
+  expect(cycle.beforeHit.front).toBeLessThan(cycle.letter.left);
+  expect(cycle.hit.front).toBeGreaterThan(cycle.letter.left);
+  expect(cycle.hit.clip).not.toBe(cycle.beforeHit.clip);
+  expect(cycle.secondHit.clip).not.toBe(cycle.hit.clip);
+  expect(cycle.exit.rear).toBeGreaterThan(cycle.right);
+  expect(cycle.enter.front).toBeLessThan(cycle.left);
+  expect(cycle.exit.clip).toContain('100%');
+  expect(cycle.enter.clip).toBe(cycle.exit.clip);
+  expect(cycle.beforeReveal.clip).toBe(cycle.exit.clip);
+  expect(cycle.beforeReveal.rear).toBeLessThan(cycle.letter.right);
+  expect(cycle.reveal.rear).toBeGreaterThan(cycle.letter.right);
+  expect(cycle.reveal.clip).not.toBe(cycle.beforeReveal.clip);
+  expect(cycle.secondReveal.clip).not.toBe(cycle.reveal.clip);
+  expect(cycle.complete.clip).toBe(cycle.beforeHit.clip);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(bus).toHaveCSS('animation-name', 'none');
+  await expect.poll(() => button.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0);
+  await expect(button.locator('.calculation-label')).toHaveCSS('clip-path', 'none');
   await expect(bus).toBeVisible();
   await expect(button).toContainText('Calculating route…');
   await expect(page.locator('#trip-origin')).toBeDisabled();
@@ -481,6 +528,7 @@ test('trip endpoints stay consistent while a slow search is running', async ({ p
   await expect(page.locator('#trip-origin')).toBeEnabled();
   await expect(progress).toBeHidden();
   await expect(button).toHaveAttribute('aria-busy', 'false');
+  await expect(button).toHaveAccessibleName('Find quickest bus trip');
 });
 
 test('late agency directory responses cannot overwrite a newer code lookup', async ({ page }) => {

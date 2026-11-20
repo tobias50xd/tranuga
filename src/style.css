@@ -134,14 +134,11 @@ nav .menu-toggle:hover{border-color:#879a7e}
 .bus-pointer svg{width:16px;height:16px;transform:rotate(var(--heading,0deg));pointer-events:none}
 #catalog-plan,#find-trip{gap:10px}
 .trip-bus-icon{width:23px;height:23px;flex:none;color:#fff}
+#find-trip{position:relative;overflow:hidden}
 #find-trip .trip-bus-icon{margin-inline:4px}
 #find-trip[aria-busy=true]{opacity:1}
-#find-trip[aria-busy=true] .trip-bus-icon{animation:trip-bus-drive 1.15s linear infinite}
-@keyframes trip-bus-drive{
-  from{transform:translateX(-4px);opacity:.55}
-  45%,65%{opacity:1}
-  to{transform:translateX(4px);opacity:.55}
-}
+#find-trip[data-driving] .trip-bus-icon{position:absolute;top:50%;left:0;margin:0;transform:translate(-100%,-50%)}
+#find-trip .calculation-label{display:grid;align-items:center;min-height:23px}
 .transfer-marker>span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#7940be;color:white;font-size:22px;font-weight:750;box-shadow:0 1px 7px #0005;position:relative}
 .transfer-marker small{position:absolute;right:-7px;bottom:-5px;display:grid;place-items:center;background:#5b258e;color:#fff;border:1px solid white;border-radius:50%;width:17px;height:17px;font-size:10px}
 .transfer-hint{display:block!important;color:#7940be!important;font-size:.75rem!important;font-weight:700;margin-bottom:6px}

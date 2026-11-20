@@ -13,6 +13,7 @@ import { getCurrentLocation } from './location';
 import { readNetwork, readPreferences, saveNetwork, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
 import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
 import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehicleAge, headingLabel } from './ui';
+import { animateTripButton } from './trip-button';
 
 const tripBusIcon = `<svg class="trip-bus-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
   <path fill-rule="evenodd" d="M4.5 5h12.3a3 3 0 0 1 2.5 1.35l2.05 3.08c.43.65.65 1.42.65 2.2V16a2 2 0 0 1-2 2h-.82a3 3 0 0 0-5.66 0H9.48a3 3 0 0 0-5.66 0H3a1 1 0 0 1-1-1V7.5A2.5 2.5 0 0 1 4.5 5ZM5 8h4v4H5V8Zm6 0h4v4h-4V8Zm6 0h.1c.34 0 .65.17.84.45l1.55 2.33c.24.36.41.78.46 1.22H17V8Z"/>
@@ -54,6 +55,7 @@ let selectedDirection = '';
 let selectedStop: StopDetail | undefined;
 let stopOperation = 0;
 let planning = false;
+let stopTripAnimation: (() => void) | undefined;
 let agencyRevision = 0;
 let crawling = false;
 let comparisonRevision = 0;
@@ -84,6 +86,7 @@ function setPath(path: string, mode: HistoryMode) {
 function setView(next: typeof view) {
   Object.values(pointInputs).forEach(input => input.destroy()); pointInputs = {};
   stopRouteVehicleUpdates?.();
+  stopTripAnimation?.(); stopTripAnimation = undefined;
   map?.destroy(); map = undefined; displayedJourney = undefined; view = next; operation++;
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-nav]')) {
     const active = button.dataset.nav === (next === 'detail' ? 'routes' : next);
@@ -119,8 +122,13 @@ function writeNotes(selector: string, html: string) {
   for (const kind of expanded) target.querySelector(`[data-note-kind="${kind}"] .note-details`)?.setAttribute('open','');
 }
 function setRouteLoading(active: boolean) {
-  const button=$<HTMLButtonElement>('#find-trip'); button.setAttribute('aria-busy',String(active));
-  button.querySelector('.calculation-label')!.textContent=active?'Calculating route…':'Find quickest bus trip';
+  const button = $<HTMLButtonElement>('#find-trip');
+  const label = active ? 'Calculating route…' : 'Find quickest bus trip';
+  stopTripAnimation?.();
+  button.setAttribute('aria-busy', String(active));
+  button.setAttribute('aria-label', label);
+  button.querySelector('.calculation-label')!.textContent = label;
+  stopTripAnimation = active ? animateTripButton(button) : undefined;
   $('#trip-progress').hidden=!active;
   $('#trip-form').setAttribute('aria-busy',String(active));
 }

@@ -352,7 +352,7 @@ The planner records the exact directed pattern and boarding visit on each ride l
 
 Each boarding after the first gets a numbered **purple ↔ transfer marker** and a “Change at” label in the itinerary. Shared-stop transfers use one marker; walking transfers mark the alighting and next boarding stops. Walking stays dashed. The camera fits the traveled segments and stops; a bus elsewhere on a selected line does not widen the view. Editing endpoints clears old trip lines, transfer markers and journey buses.
 
-The calculate button shows **Calculating route…** with an animated white bus icon while feeds load and the journey is calculated. Inputs remain disabled during calculation, and the icon stays still if reduced motion is enabled. Notes and full assumptions remain available in expandable panels.
+The calculate button shows **Calculating route…** while feeds load and the journey is calculated. The white bus clears the letters as it crosses the button, then reveals them one by one on the next pass. Inputs remain disabled during calculation. With reduced motion enabled, the icon and label stay still. Notes and full assumptions remain available in expandable panels.
 
 ### Route vehicle feeds and marker motion
 
