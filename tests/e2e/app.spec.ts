@@ -4,7 +4,7 @@ import ohioFixture from '../fixtures/passio-ohio.json' with { type: 'json' };
 import ugaPassioFixture from '../fixtures/passio-uga.json' with { type: 'json' };
 import passioExtras from '../fixtures/passio-extras.json' with { type: 'json' };
 
-type MockOptions = { cityRoute?: boolean; transfer?: boolean; outsideVehicle?: boolean; failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[]; freshPassioVehicles?: boolean; duplicatePassioVehicles?: boolean };
+type MockOptions = { cityRoute?: boolean; transfer?: 'straight' | 'curved' | 'unmapped'; outsideVehicle?: boolean; failRoutes?: boolean; noVehicles?: boolean; staleVehicles?: boolean; failTracking?: boolean; passio?: boolean; failedMirrors?: string[]; freshPassioVehicles?: boolean; duplicatePassioVehicles?: boolean };
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => { const errors: string[] = []; pageErrors.set(page, errors); page.on('pageerror', error => errors.push(error.message)); });
 test.afterEach(({ page }) => { expect(pageErrors.get(page)).toEqual([]); });
@@ -14,7 +14,15 @@ async function mockTransit(page: Page, options: MockOptions = {}) {
   data.ugaVehicles.forEach(bus => { bus.lastUpdate = options.staleVehicles ? Date.now() - 360000 : Date.now(); });
   if (options.outsideVehicle) data.ugaVehicles.push({ ...data.ugaVehicles[0], id:'999999', name:'Outside bus', latitude:39.33, longitude:-82.1 });
   if (options.cityRoute) data.ugaRoutes.push({...data.ugaRoutes[1],id:9001,new_id:'9001',long_name:'City Line 1',short_name:'1',isAthensBus:true});
-  if (options.transfer) { data.ugaRoutes[0].active=true; data.ugaRoutes.push({...data.ugaRoutes[1],id:9009,new_id:'9009',long_name:'Unused Line',short_name:'X'}); }
+  if (options.transfer) {
+    data.ugaRoutes[0].active=true;
+    data.ugaRoutes.push({...data.ugaRoutes[1],id:9009,new_id:'9009',long_name:'Unused Line',short_name:'X'});
+    const template = data.ugaStatic.shapes[0];
+    // The route-lock fixture has horizontal traces so the endpoints measure its entire extent.
+    const shapes = options.transfer === 'curved' ? ['ozenEn_b|NoKg^?_cBnKgw@', 'ozenE~c|{NvQg^?_|BwQg^']
+      : ['ozenEn_b|N?ozD', 'ozenE~c|{N?ozD'];
+    data.ugaStatic.shapes = options.transfer === 'unmapped' ? [] : ['5750', '5741'].map((routeId, index) => ({ ...template, routeId, shape:shapes[index] }));
+  }
   data.ugaTracking.forEach((stop, i) => { stop.times = [Date.now() + 300000 + i * 60000]; });
   data.ugaStop.forEach(stop => { stop.times = [Date.now() + 180000]; });
   await page.route('https://tile.openstreetmap.org/**', route => route.abort());
@@ -267,6 +275,8 @@ test('plans a real directed bus connection between arbitrary coordinates', async
   await page.getByRole('button', { name: 'Find quickest bus trip' }).click();
   await expect(page.locator('.trip-summary')).toContainText('QUICKEST ESTIMATED CONNECTION');
   await expect(page.locator('.journey-leg.ride')).not.toHaveCount(0);
+  await expect(page.locator('.journey-ride').first()).toBeVisible();
+  await expect(page.locator('.journey-ride[stroke-dasharray]')).toHaveCount(0);
   await expect(page.locator('.trip-lines li')).not.toHaveCount(0);
   await expect(page.locator('.bus-marker')).not.toHaveCount(0);
   await expect(page.locator('.assumptions')).toBeVisible();
@@ -852,8 +862,8 @@ test('route lock allows address hints and current locations outside Athens Georg
   await expect(page.locator('#trip-origin')).toHaveValue('Current location');
 });
 
-async function transferTrip(page: Page) {
-  await mockTransit(page,{transfer:true,noVehicles:true}); await page.goto('/plan');
+async function transferTrip(page: Page, transfer: MockOptions['transfer'] = 'straight') {
+  await mockTransit(page,{transfer,noVehicles:true}); await page.goto('/plan');
   await page.locator('#trip-origin').fill('33.95,-83.41'); await page.locator('#trip-destination').fill('33.95,-83.35');
   await page.getByRole('button',{name:'Find quickest bus trip'}).click();
   await expect(page.locator('.trip-summary')).toBeVisible();
@@ -997,7 +1007,7 @@ test('notes collapse below the map with compact fragments and optional original 
 });
 
 test('the journey draws only used bus lines and marks the actual transfer stop', async ({ page }) => {
-  const {calls}=await mockTransit(page,{transfer:true,noVehicles:true}); await page.goto('/plan');
+  const {calls}=await mockTransit(page,{transfer:'curved',noVehicles:true}); await page.goto('/plan');
   await page.locator('#trip-origin').fill('33.95,-83.41'); await page.locator('#trip-destination').fill('33.95,-83.35');
   await page.locator('#max-walk').selectOption('800'); await page.getByRole('button',{name:'Find quickest bus trip'}).click();
   await expect(page.locator('.journey-leg.ride')).toHaveCount(2); await expect(page.locator('.transfer-marker')).toHaveCount(1);
@@ -1005,23 +1015,73 @@ test('the journey draws only used bus lines and marks the actual transfer stop',
   await expect(page.locator('.transfer-hint')).toContainText('Change Stop');
   const drawn=await page.locator('path.journey-ride').evaluateAll(paths=>paths.map(path=>path.getAttribute('data-route-id')));
   expect(new Set(drawn)).toEqual(new Set(['5750','5741'])); expect(drawn).not.toContain('9009');
+  await expect(page.locator('path.journey-ride[stroke-dasharray]')).toHaveCount(0);
+  for (const routeId of drawn) expect(await page.locator(`path.journey-ride[data-route-id="${routeId}"]`).getAttribute('d')).toMatch(/L.*L/);
   expect(calls.some(url=>url.includes('routeTracking_9009'))).toBe(true);
   await expect(page.locator('#trip-notes > details').first()).not.toHaveAttribute('open','');
   await page.locator('#trip-origin').fill('33.951,-83.41'); await expect(page.locator('path.journey-ride')).toHaveCount(0); await expect(page.locator('.transfer-marker')).toHaveCount(0);
 });
 
+test('the trip map labels unavailable road traces and still shows the boarding and alighting stops', async ({ page }) => {
+  await transferTrip(page, 'unmapped');
+  await expect(page.locator('.journey-leg.ride')).toHaveCount(2);
+  await expect(page.locator('path.journey-ride')).toHaveCount(0);
+  await expect(page.locator('.transfer-marker')).toHaveCount(1);
+  await expect(page.locator('#map-instruction')).toContainText('Some ride traces are unavailable');
+  await expect(page.locator('#trip-notes')).toContainText('Road traces are unavailable for');
+});
+
+test('the trip map picks one route feed and replaces the same bus when another feed becomes fresher', async ({ page }) => {
+  const { data } = await mockTransit(page, { passio:true });
+  const portal = data.ugaVehicles[0];
+  const passio = Object.values(ugaPassioFixture.buses.buses).flat().find(bus => String(bus.routeId) === '44886')!;
+  let probes = 0;
+  await page.route('**/api?url=*', route => {
+    const target = new URL(new URL(route.request().url()).searchParams.get('url')!);
+    if (target.searchParams.get('getBuses') !== '1') return route.fallback();
+    probes++;
+    return route.fulfill({ json: { buses: { central: [{ ...passio, busId:portal.id, busName:portal.name, outdated:0 }] } } });
+  });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+  await page.goto('/plan');
+  const from = data.ugaTracking[0].stop, to = data.ugaTracking[8].stop;
+  await page.locator('#trip-origin').fill(`${from.latitude},${from.longitude}`);
+  await page.locator('#trip-destination').fill(`${to.latitude},${to.longitude}`);
+  await page.getByRole('button', { name:'Find quickest bus trip' }).click();
+  const markers = page.locator('#trip-map .bus-marker');
+  await expect(markers).toHaveCount(1);
+  await expect(markers).toHaveAttribute('aria-label', /^Bus 17997,/);
+  await expect(page.locator('[data-line-buses="5750"]')).toHaveText('1 bus reported');
+  const initialProbes = probes;
+  portal.lastUpdate -= 121_000;
+  await page.clock.runFor(10_100);
+  await expect.poll(() => probes).toBe(initialProbes + 3);
+  await expect(markers).toHaveAttribute('aria-label', /^Bus 17997,/);
+  await page.clock.runFor(5_000);
+  await expect(markers).toHaveCount(1);
+  await expect(markers).toHaveAttribute('aria-label', /^Bus passio:17997,/);
+  await expect(page.locator('[data-line-buses="5750"]')).toHaveText('1 bus reported');
+});
+
 for (const reduced of [false,true]) test(`bus updates ${reduced?'respect reduced motion':'interpolate in the journey map'} without extrapolating`, async ({ page }) => {
   await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'}); await page.clock.install();
-  const {data}=await mockTransit(page); await page.goto('/plan');
+  const {data}=await mockTransit(page); await page.clock.pauseAt(new Date(Date.now() + 1_000)); await page.goto('/plan');
   const from=data.ugaTracking[0].stop,to=data.ugaTracking[8].stop;
   await page.locator('#trip-origin').fill(`${from.latitude},${from.longitude}`); await page.locator('#trip-destination').fill(`${to.latitude},${to.longitude}`);
   await page.getByRole('button',{name:'Find quickest bus trip'}).click(); await expect(page.locator('.bus-marker')).toHaveCount(1);
+  let probes = 0;
   await page.route('**/api?url=*', async route=>{
     if (!new URL(route.request().url()).searchParams.get('url')?.endsWith('/Buses')) { await route.fallback(); return; }
     const at=await page.evaluate(()=>Date.now());
     await route.fulfill({json:[{...data.ugaVehicles[0],longitude:data.ugaVehicles[0].longitude+.00065,heading:200,lastUpdate:at,proxyTimestamp:at}]});
+    probes++;
   });
-  await page.clock.fastForward(16000); await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label',/, S/);
+  await page.clock.runFor(10_100);
+  await expect.poll(() => probes).toBe(1);
+  await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label', /, E/);
+  await page.clock.runFor(5_000);
+  await expect(page.locator('.bus-marker')).toHaveAttribute('aria-label', /, S/);
   const initial=await page.locator('.bus-marker').getAttribute('style');
   await page.clock.runFor(4000); const middle=await page.locator('.bus-marker').getAttribute('style');
   await page.clock.runFor(8000); const late=await page.locator('.bus-marker').getAttribute('style');

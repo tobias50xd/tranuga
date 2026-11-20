@@ -2,7 +2,7 @@ import authoritySnapshot from '../data/authorities.json';
 import type { Agency, Coordinate, Departure, Network, Route, RouteDetail, RoutePattern, Stop, StopDetail, Vehicle } from '../types';
 import { ApiClient } from './client';
 import { discoveryEndpoints, infoEndpoints, kmlEndpoint, ugaEndpoints } from './endpoints';
-import { infoDepartures, list, messages, normalizeAgencies, normalizeRoutes, normalizeStops, normalizeVehicles, parseKml, record, rows, text, ugaDepartures, uniqueStops } from './normalize';
+import { infoDepartures, list, messages, normalizeAgencies, normalizeRoutes, normalizeStops, normalizeVehicles, parseKmlSegments, record, rows, text, ugaDepartures, uniqueStops } from './normalize';
 import { infoPatterns, ugaTopology, ugaTrackingPatterns, withDirectionStops, type UgaTopology } from './topology';
 import { vehicleAgeWarnings } from '../vehicle-selection';
 
@@ -90,12 +90,13 @@ export class TransitService {
       this.client.get(e.routeStops([routeId]), 300000).catch(error => { warnings.push(`Route stop directory unavailable: ${failure(error)}`); return []; }),
     ]);
     const row = record(raw); if (!row.RouteId) throw new Error('Route detail has an unsupported format.');
-    let shape: Coordinate[] = [];
+    let shapeSegments: Coordinate[][] = [];
     if (text(row.RouteTraceFilename)) {
-      try { const url = kmlEndpoint(this.config, text(row.RouteTraceFilename)); shape = parseKml(await this.client.get<string>(url, 3600000, 'text')); }
+      try { const url = kmlEndpoint(this.config, text(row.RouteTraceFilename)); shapeSegments = parseKmlSegments(await this.client.get<string>(url, 3600000, 'text')).filter(segment => segment.length > 1); }
       catch (error) { warnings.push(`Road trace unavailable: ${failure(error)}`); }
     }
-    let patterns = infoPatterns(raw, normalizeStops(routeStopsRaw), shape);
+    const shape = shapeSegments.length === 1 ? shapeSegments[0] : [];
+    let patterns: RoutePattern[] = infoPatterns(raw, normalizeStops(routeStopsRaw), shape).map(pattern => ({ ...pattern, shapeSegments }));
     const directions = rows(directionsRaw, 'Route directions').map(d => text(d.Dir)).filter(Boolean);
     const directionResults = await concurrent(directions, async direction => ({ direction, data: await this.client.get(e.directionStops(routeId, direction), 300000) }));
     for (const result of directionResults) {
@@ -104,7 +105,7 @@ export class TransitService {
     }
     const stops = [...new Map([...normalizeStops(routeStopsRaw), ...normalizeStops(Array.isArray(row.Stops) ? row.Stops : []), ...uniqueStops(patterns)].map(s => [s.id, s])).values()];
     stops.forEach(s => this.cachedStops.set(s.id, s));
-    if (!shape.length) warnings.push('Road trace unavailable; dashed stop connectors are approximate.');
+    if (!shapeSegments.length) warnings.push('Road trace unavailable; dashed stop connectors are approximate.');
     const vehicles = includeVehicles ? normalizeVehicles([row], 'infopoint', undefined, this.agency.id) : [];
     return { route, patterns, stops, vehicles, departures: [...this.recentDepartures.values()].flat().filter(d => d.routeId === routeId), messages: messages(row.Messages), warnings: [...warnings, ...vehicleAgeWarnings(vehicles)] };
   }

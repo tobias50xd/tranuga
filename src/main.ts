@@ -1,17 +1,18 @@
 import './style.css';
 import { UGA_AGENCY, discoverAgencies, locateAgencies, findAgenciesByCode } from './api';
 import { createTransitService, knownStops, ATHENS_INFO_AGENCY, GEORGIA_AGENCY, PASSIO_ATHENS_AGENCY, PASSIO_UGA_AGENCY } from './replication';
-import type { RouteVehicleSnapshot, RouteVehicleTracker } from './replication/route-vehicles';
+import { uniqueFleetVehicles, type RouteVehicleSnapshot, type RouteVehicleTracker } from './replication/route-vehicles';
 import { planJourney, parseCoordinate, type Journey } from './planner';
 import { TransitMap, VEHICLE_REFRESH_MS } from './map';
+import { journeyRideGeometries } from './journey-map';
 import { renderNotes, compactNote } from './notes';
 import { Favorites } from './favorites';
 import { sortRoutes, routeState, routeStateLabel, routeOperator } from './route-presentation';
-import { uniqueVehicles, vehicleAgeWarnings, vehicleIsStale } from './vehicle-selection';
+import { vehicleAgeWarnings, vehicleIsStale } from './vehicle-selection';
 import { PlaceInput, PlaceSearch } from './places';
 import { getCurrentLocation } from './location';
 import { readNetwork, readPreferences, saveNetwork, savePreference, THEME_KEY, ROUTE_LOCK_KEY } from './preferences';
-import type { Agency, Coordinate, Network, Route, RouteDetail, Stop, StopDetail } from './types';
+import type { Agency, Coordinate, Route, RouteDetail, Stop, StopDetail } from './types';
 import { escapeHtml as e, safeColor, coordinates, clockTime, arrivalLabel, vehicleAge, headingLabel } from './ui';
 import { animateTripButton } from './trip-button';
 
@@ -45,11 +46,9 @@ const favorites = new Favorites();
 let displayedJourney: Journey | undefined;
 let pickMode: 'origin' | 'destination' | undefined;
 let operation = 0;
-let pollingOperation: number | undefined;
-let stopRouteVehicleUpdates: (() => void) | undefined;
+let stopVehicleUpdates: (() => void) | undefined;
 const ROUTE_PROBE_LEAD_MS = 5_000;
 let catalogTime: number | undefined;
-let network: Network | undefined;
 let agencyChoices: Agency[] = [];
 let selectedDirection = '';
 let selectedStop: StopDetail | undefined;
@@ -85,7 +84,7 @@ function setPath(path: string, mode: HistoryMode) {
 }
 function setView(next: typeof view) {
   Object.values(pointInputs).forEach(input => input.destroy()); pointInputs = {};
-  stopRouteVehicleUpdates?.();
+  stopVehicleUpdates?.();
   stopTripAnimation?.(); stopTripAnimation = undefined;
   map?.destroy(); map = undefined; displayedJourney = undefined; view = next; operation++;
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-nav]')) {
@@ -189,7 +188,7 @@ async function showRoutes(refresh = false, historyMode: HistoryMode = 'push') {
       if (refresh) service.client.clear();
       const result = await service.getLiveRoutes();
       if (token !== operation) return;
-      routes = result; catalogTime = Date.now(); network = undefined;
+      routes = result; catalogTime = Date.now();
     } catch (error) {
       if (token !== operation) return;
       $('#catalog-status').innerHTML = `${warning([errorMessage(error)], 'error')}`;
@@ -224,11 +223,17 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
   setView('detail'); const token = operation; detail = undefined; selectedStop = undefined; selectedDirection = '';
   main.innerHTML = `<section class="container detail-page"><button class="text-button" id="back-routes">← All routes</button><div id="route-detail" class="loading" role="status">Loading route, stops and live buses…</div></section>`;
   $('#back-routes').onclick = () => void showRoutes();
-  const latestSnapshot = startRouteVehicleUpdates(service.routeVehicleTracker(routeId), token);
+  let snapshot: RouteVehicleSnapshot = { vehicles: [], pending: true };
+  stopVehicleUpdates = watchRouteVehicles([service.routeVehicleTracker(routeId)], ([next]) => {
+    snapshot = next;
+    if (!detail) return;
+    detail.vehicles = snapshot.vehicles;
+    map?.showVehicles(snapshot.vehicles, detail.route.color);
+    renderVehicles(snapshot);
+  });
   try {
     const result = await service.getRoute(routeId, false);
     if (token !== operation) return;
-    const snapshot = latestSnapshot();
     result.vehicles = snapshot.vehicles;
     detail = result;
     $('#route-detail').className = '';
@@ -256,7 +261,7 @@ async function showRoute(routeId: string, historyMode: HistoryMode = 'push') {
     void service.getMessages().then(messages => { if (token === operation) writeNotes('#service-messages', warning([...new Set([...result.messages, ...messages])], 'service')); }).catch(error => { if (token === operation) $('#service-messages').innerHTML += warning([`Service alerts could not be loaded: ${errorMessage(error)}`]); });
   } catch (error) {
     if (token === operation) {
-      stopRouteVehicleUpdates?.();
+      stopVehicleUpdates?.();
       $('#route-detail').innerHTML = `${warning([errorMessage(error)], 'error')}<button class="button" id="retry-route">Retry route</button>`;
       $('#retry-route').onclick = () => void showRoute(routeId);
     }
@@ -323,7 +328,7 @@ function showPlanner(historyMode: HistoryMode = 'push') {
       <button class="button primary full" type="submit" id="find-trip">${tripBusIcon}<span class="calculation-label">Find quickest bus trip</span><span id="trip-progress" class="sr-only" role="progressbar" aria-label="Route calculation" aria-valuetext="Loading routes, arrivals and bus positions" hidden></span></button>
       <p class="help-text">Type a stop, place or address and choose a suggestion, or pick on the map. Decimal coordinates also work. Walking follows straight-line distances; allow extra time for paths and crossings. Transfers can include up to 300 m of walking.</p>
       <p class="search-credit">Address search: <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Address queries go to Photon after a short pause.</p></fieldset></form><div id="trip-status" role="status"></div><div id="trip-result" aria-live="polite"></div>${service.hasPassioFor() ? '<details class="operator-comparison"><summary>Compare with the provider</summary><p class="help-text">Sends these two points to Passio when requested. Its suggested paths are shown separately from our bus-only estimate.</p><button class="button" id="compare-provider">Request provider comparison</button><div id="operator-result" role="status"></div></details>' : ''}</aside>
-      <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Approximate / walking</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
+      <div class="map-wrap planner-map-wrap"><div id="trip-map" class="map" role="region" aria-label="Trip map. Pick start and destination points using the buttons."></div><div id="map-instruction" class="map-instruction">Choose a start and destination to get going.</div><div class="map-caption journey-legend"><span>━ Used ride segment</span><span>┄ Estimated walk</span><span class="transfer-key">↔ Transfer stop</span></div></div></div><div id="trip-notes"></div>
       <div class="planning-note">${warning(['The planner loads the full directed route topology, connects lines at shared or nearby stops, and ranks usable service with current ETAs and recent bus positions. Missing live timing uses a 7.5-minute wait and estimated bus travel. Trips are estimates, not a timetable guarantee.'], 'estimate')}</div></section>`;
   map = new TransitMap($('#trip-map'), agency.center || center, point => {
     if (!pickMode || planning) return;
@@ -335,8 +340,10 @@ function showPlanner(historyMode: HistoryMode = 'push') {
     map?.showPoints(origin, destination);
   }, routeLocked, setRouteLock);
   map.showPoints(origin, destination);
-  void refreshLiveVehicles(true);
   const token = operation, current = service;
+  if (!document.hidden) void current.refreshVehicles(true).then(() => {
+    if (token === operation) renderReplication();
+  }).catch(() => { /* The planner can still load its own network snapshot. */ });
   const searchCenter = agency.center ?? center;
   let stopHints = knownStops(agency);
   // Fetch only stop directories; address typing never triggers a full ETA crawl.
@@ -381,12 +388,12 @@ function showPlanner(historyMode: HistoryMode = 'push') {
   focusTitle();
 }
 
-function resetTripResult() { displayedJourney = undefined; $('#trip-notes').innerHTML = ''; $('#trip-result').innerHTML = ''; $('#trip-status').innerHTML = ''; comparisonRevision++; const comparison = document.querySelector('#operator-result'); if (comparison) comparison.innerHTML = ''; map?.clearJourney(); }
+function resetTripResult() { stopVehicleUpdates?.(); displayedJourney = undefined; $('#trip-notes').innerHTML = ''; $('#trip-result').innerHTML = ''; $('#trip-status').innerHTML = ''; comparisonRevision++; const comparison = document.querySelector('#operator-result'); if (comparison) comparison.innerHTML = ''; map?.clearJourney(); }
 
 function choosePoint(kind: 'origin' | 'destination') {
   pickMode = pickMode === kind ? undefined : kind;
   const instruction = pickMode ? `Click the map to choose your ${kind === 'origin' ? 'start' : 'destination'}.`
-    : displayedJourney ? 'Used ride segments only · ↔ transfer stops · dashed lines: estimates'
+    : displayedJourney ? 'Used ride segments only · ↔ transfer stops · dashed lines: walking'
     : 'Choose a start and destination to get going.';
   $('#map-instruction').textContent = instruction;
   announce(pickMode ? instruction : 'Map selection canceled.');
@@ -411,30 +418,46 @@ async function findTrip() {
   if (planning) return;
   const from = origin, to = destination;
   if (!from || !to) { $('#trip-status').innerHTML = warning(['Choose a start and destination from the suggestions, or use the map. Valid decimal coordinates also work.'], 'action'); return; }
-  displayedJourney = undefined; map?.clearJourney(); origin = from; destination = to; map?.showPoints(origin, destination);
-  const token = operation; planning = true; pickMode = undefined;
+  resetTripResult(); map?.showPoints(from, to);
+  const token = operation, current = service; planning = true; pickMode = undefined;
   const fields = $<HTMLFieldSetElement>('#trip-fields'); fields.disabled = true; setRouteLoading(true);
   $('#trip-notes').innerHTML = '';
   $('#trip-result').innerHTML = ''; $('#trip-status').textContent = 'Comparing available routes, arrivals and transfers…';
   try {
     // Refresh the network for each search so old predictions are not reused as current.
-    const currentNetwork = await service.getNetwork();
+    const currentNetwork = await current.getNetwork();
     if (token !== operation) return;
-    network = currentNetwork;
     const result = planJourney(currentNetwork, from, to, { now: Date.now(), maxWalkMeters });
     $('#trip-status').innerHTML = ''; $('#trip-notes').innerHTML = warning(currentNetwork.messages, 'service') + warning(currentNetwork.warnings);
     if (result.status === 'unavailable') { $('#trip-result').innerHTML = `<div class="empty"><h3>No bus connection found</h3><p>${e(result.reason)}</p><p>Try a point closer to a stop or increase the walking limit.</p></div>`; return; }
-    const trip = result.journey; displayedJourney = trip; let rideNumber = 0;
+    const trip = result.journey; let rideNumber = 0;
     const routeById = new Map(currentNetwork.routes.map(route => [route.id, route]));
     const rideLegs = trip.legs.filter(leg => leg.kind === 'ride');
+    const geometry = await journeyRideGeometries(rideLegs, currentNetwork, id => current.getRoute(id, false));
+    if (token !== operation) return;
+    displayedJourney = trip;
+    const missingTraces = [...new Set(rideLegs.filter(leg => !geometry.has(leg)).map(leg => leg.routeName))];
+    if (missingTraces.length) $('#trip-notes').innerHTML += warning([`Road traces are unavailable for ${missingTraces.join(', ')}. The map shows the boarding and alighting stops for those rides.`]);
     const usedLines = [...new Map(rideLegs.map(leg => [JSON.stringify([leg.routeId,leg.direction]), {
-      route: routeById.get(leg.routeId), leg, busCount: currentNetwork.vehicles.filter(bus => bus.routeId === leg.routeId).length,
+      route: routeById.get(leg.routeId), leg,
     }])).values()];
     $('#trip-result').innerHTML = `<div class="trip-summary"><div class="eyebrow">QUICKEST ESTIMATED CONNECTION</div><strong>${Math.ceil(trip.durationSeconds / 60)} <small>min</small></strong><p>Arrive ${clockTime(trip.arrivalTime)} · ${trip.transfers} transfer${trip.transfers === 1 ? '' : 's'} · ${Math.round(trip.walkingMeters)} m walking</p><span class="estimate-badge">${trip.confidence === 'live-assisted' ? 'Uses live predictions + estimates' : 'Estimated timing'}</span></div>
-      <section class="trip-lines" aria-labelledby="trip-lines-title"><h2 id="trip-lines-title">Bus lines for this trip</h2><ul>${usedLines.map(({ route, leg, busCount }) => `<li style="--route-color:${safeColor(route?.color ?? '#b92535')}"><span class="route-badge">${e(route?.shortName || leg.routeId)}</span><span><strong>${e(route?.name || leg.routeName)}</strong><small>${e(leg.direction)} · <span data-line-buses="${e(leg.routeId)}">${busCount} bus${busCount === 1 ? '' : 'es'} reported</span></small></span></li>`).join('')}</ul></section>
+      <section class="trip-lines" aria-labelledby="trip-lines-title"><h2 id="trip-lines-title">Bus lines for this trip</h2><ul>${usedLines.map(({ route, leg }) => `<li style="--route-color:${safeColor(route?.color ?? '#b92535')}"><span class="route-badge">${e(route?.shortName || leg.routeId)}</span><span><strong>${e(route?.name || leg.routeName)}</strong><small>${e(leg.direction)} · <span data-line-buses="${e(leg.routeId)}">Checking bus feeds…</span></small></span></li>`).join('')}</ul></section>
       <ol class="journey-legs">${trip.legs.map(leg => `<li class="journey-leg ${leg.kind}"><span class="leg-icon" aria-hidden="true">${leg.kind === 'walk' ? '↗' : leg.kind === 'wait' ? '◷' : '→'}</span><div>${leg.kind === 'ride' && rideNumber++ > 0 ? `<span class="transfer-hint">↔ Change at ${e(leg.stops[0]?.name)}</span>` : ''}<strong>${leg.kind === 'ride' ? e(leg.routeName) : leg.kind === 'wait' ? 'Wait for your bus' : 'Walk'}</strong><span>${clockTime(leg.startTime)} – ${clockTime(leg.endTime)}</span><p>${leg.kind === 'ride' ? `${e(leg.stops[0]?.name)} → ${e(leg.stops.at(-1)?.name)}<br>${e(leg.direction)} · ${leg.source === 'live' ? 'Live ETA' : leg.source === 'vehicle' ? 'Recent bus position' : 'Estimated'}` : `${Math.ceil((leg.endTime - leg.startTime) / 60000)} min`}</p></div></li>`).join('')}</ol><details class="assumptions"><summary>How this estimate works</summary><ul>${trip.assumptions.map(item => `<li>${e(compactNote(item))}</li>`).join('')}</ul><details class="note-details"><summary>Full text</summary>${trip.assumptions.map(item => `<p>${e(item)}</p>`).join('')}</details></details>`;
-    map?.showJourney(trip, currentNetwork);
-    $('#map-instruction').textContent = 'Used ride segments only · ↔ transfer stops · dashed lines: estimates';
+    map?.showJourney(trip, routeById, geometry);
+    const routeIds = [...new Set(rideLegs.map(leg => leg.routeId))];
+    stopVehicleUpdates = watchRouteVehicles(routeIds.map(id => service.routeVehicleTracker(id)), snapshots => {
+      const vehicles = uniqueFleetVehicles(snapshots.flatMap(snapshot => snapshot.vehicles));
+      map?.showJourneyVehicles(vehicles, routeById);
+      const counts = new Map<string, number>();
+      for (const bus of vehicles) counts.set(bus.routeId, (counts.get(bus.routeId) ?? 0) + 1);
+      document.querySelectorAll<HTMLElement>('[data-line-buses]').forEach(element => {
+        const id = element.dataset.lineBuses!;
+        const count = counts.get(id) ?? 0;
+        element.textContent = snapshots[routeIds.indexOf(id)]?.pending ? 'Checking bus feeds…' : `${count} bus${count === 1 ? '' : 'es'} reported`;
+      });
+    });
+    $('#map-instruction').textContent = missingTraces.length ? 'Some ride traces are unavailable. Boarding and alighting stops are shown.' : 'Used ride segments only · ↔ transfer stops · dashed lines: walking';
     announce(`Trip found. ${Math.ceil(trip.durationSeconds / 60)} minutes, arriving ${clockTime(trip.arrivalTime)}.`);
   } catch (error) {
     if (token === operation) $('#trip-status').innerHTML = `${warning([errorMessage(error)], 'error')}`;
@@ -494,27 +517,19 @@ async function selectAgency(choice: Agency) {
   const next = choice.kind === 'uga' ? GEORGIA_AGENCY : choice;
   if (next.kind !== agency.kind || next.id !== agency.id) { routeQuery = ''; activeRoutesOnly = false; maxWalkMeters = 1200; }
   agency = next; saveNetwork(agency);
-  service = createTransitService(agency); routes = []; network = undefined; detail = undefined; origin = undefined; destination = undefined; originLabel = ''; destinationLabel = '';
+  service = createTransitService(agency); routes = []; detail = undefined; origin = undefined; destination = undefined; originLabel = ''; destinationLabel = '';
   $('#agency-name').textContent = agency.name;
   $('#sync-status').textContent = ''; $('#provider-details').textContent = ''; $<HTMLButtonElement>('#sync-data').disabled = false; renderReplication();
   await showRoutes(true);
 }
 
-function startRouteVehicleUpdates(tracker: RouteVehicleTracker, token: number) {
-  let snapshot: RouteVehicleSnapshot = { vehicles: [], pending: true };
+function watchRouteVehicles(trackers: RouteVehicleTracker[], onUpdate: (snapshots: RouteVehicleSnapshot[]) => void) {
   const publish = () => {
-    if (token !== operation || document.hidden) return;
-    snapshot = tracker.snapshot();
-    if (!detail) return;
-    detail.vehicles = snapshot.vehicles;
-    map?.showVehicles(snapshot.vehicles, detail.route.color);
-    renderVehicles(snapshot);
+    if (!document.hidden) onUpdate(trackers.map(tracker => tracker.snapshot()));
   };
-  const probe = () => {
-    if (!document.hidden) void tracker.probe();
-  };
+  const probe = () => document.hidden ? Promise.resolve() : Promise.all(trackers.map(tracker => tracker.probe()));
   let initial = true;
-  if (!document.hidden) void tracker.probe().then(() => { if (initial) publish(); });
+  void probe().then(() => { if (initial) publish(); });
   const initialDeadline = window.setTimeout(() => {
     initial = false;
     publish();
@@ -525,38 +540,15 @@ function startRouteVehicleUpdates(tracker: RouteVehicleTracker, token: number) {
     recurringProbe = window.setInterval(probe, VEHICLE_REFRESH_MS);
   }, VEHICLE_REFRESH_MS - ROUTE_PROBE_LEAD_MS);
   const refresh = window.setInterval(publish, VEHICLE_REFRESH_MS);
-  stopRouteVehicleUpdates = () => {
+  return () => {
     initial = false;
     window.clearTimeout(initialDeadline);
     window.clearTimeout(firstProbe);
     window.clearInterval(recurringProbe);
     window.clearInterval(refresh);
-    stopRouteVehicleUpdates = undefined;
+    stopVehicleUpdates = undefined;
   };
-  return () => snapshot;
 }
-
-async function refreshLiveVehicles(initial = false) {
-  if (document.hidden || pollingOperation === operation || view !== 'plan' || !(initial || displayedJourney && network)) return;
-  const token=operation; pollingOperation=token;
-  try {
-    const vehicles=uniqueVehicles(await service.refreshVehicles(initial));
-    if (token!==operation) return;
-    if (displayedJourney && network) {
-      network.vehicles=vehicles; map?.showJourneyVehicles(displayedJourney,network);
-      document.querySelectorAll<HTMLElement>('[data-line-buses]').forEach(element=>{
-        const count=vehicles.filter(bus=>bus.routeId===element.dataset.lineBuses).length;
-        element.textContent=`${count} bus${count===1?'':'es'} reported`;
-      });
-    }
-    renderReplication();
-  } catch (error) {
-    if (token!==operation) return;
-    const message=warning([`Live refresh failed: ${errorMessage(error)} Showing the last received positions.`]);
-    writeNotes('#trip-notes',message);
-  } finally { if (pollingOperation === token) pollingOperation=undefined; }
-}
-window.setInterval(() => void refreshLiveVehicles(),VEHICLE_REFRESH_MS);
 
 window.setInterval(() => { if (view === 'routes' || view === 'plan') void crawlLive(); }, 60000);
 

@@ -27,6 +27,26 @@ export interface RouteVehicleSnapshot {
 const LIVE_SAMPLE_MS = 30_000;
 const SAVED_SAMPLE_MS = 300_000;
 
+function fleetKey(vehicles: readonly Vehicle[]) {
+  const known = new Map<string, string>();
+  for (const bus of vehicles) if (bus.fleetIdentity) known.set(bus.id, bus.fleetIdentity);
+  return (bus: Vehicle) => known.get(bus.id) ?? bus.fleetIdentity ?? bus.id;
+}
+
+/** A bus can appear in the last-good snapshots of two routes after a reassignment. */
+export function uniqueFleetVehicles(vehicles: readonly Vehicle[], now = Date.now()): Vehicle[] {
+  const identity = fleetKey(vehicles), selected = new Map<string, Vehicle>();
+  for (const bus of vehicles) {
+    const key = identity(bus), previous = selected.get(key);
+    if (previous) {
+      const stale = vehicleIsStale(bus, now), previousStale = vehicleIsStale(previous, now);
+      if (stale !== previousStale ? stale : (bus.updatedAt ?? -Infinity) <= (previous.updatedAt ?? -Infinity)) continue;
+    }
+    selected.set(key, bus);
+  }
+  return [...selected.values()];
+}
+
 /** Candidate samples are independent. A published snapshot always comes from one endpoint. */
 export class RouteVehicleTracker {
   private feeds: { feed: RouteVehicleFeed; sample?: Sample; pending?: Promise<void>; failed?: boolean }[];
@@ -69,11 +89,7 @@ export class RouteVehicleTracker {
       return [{ feed, sample, priority }];
     });
     // A known canonical ID can still link a report that omitted its fleet number.
-    const identities = new Map<string, string>();
-    for (const { sample } of samples) {
-      for (const bus of sample.vehicles) if (bus.fleetIdentity) identities.set(bus.id, bus.fleetIdentity);
-    }
-    const identity = (bus: Vehicle) => identities.get(bus.id) ?? bus.fleetIdentity ?? bus.id;
+    const identity = fleetKey(samples.flatMap(({ sample }) => sample.vehicles));
     const assignments = new Map<string, { routeId: string; rank: number; measured: number }>();
     for (const { feed, sample } of samples) {
       for (const bus of sample.vehicles) {

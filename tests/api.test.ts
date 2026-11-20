@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import fixture from './fixtures/api-contracts.json';
 import routeKml from './fixtures/route51.kml?raw';
 import { ApiClient, findAgenciesByCode, locateAgencies, TransitService, UGA_AGENCY, ugaEndpoints, infoEndpoints, discoverAgencies, discoveryEndpoints, kmlEndpoint } from '../src/api';
-import { color, decodePolyline, infoDepartures, normalizeAgencies, normalizeRoutes, normalizeStops, normalizeVehicles, parseKml, timestamp, ugaDepartures } from '../src/api/normalize';
+import { color, decodePolyline, infoDepartures, normalizeAgencies, normalizeRoutes, normalizeStops, normalizeVehicles, parseKml, parseKmlSegments, timestamp, ugaDepartures } from '../src/api/normalize';
 import { infoPatterns, ugaTopology, ugaTrackingPatterns } from '../src/api/topology';
+import { journeyRideGeometries } from '../src/journey-map';
+import type { RideLeg } from '../src/planner';
 import type { Agency } from '../src/types';
 
 const agency: Agency = { id: '1', name: 'CATA', kind: 'infopoint', restUrl: 'https://realtime.catabus.com/InfoPoint/rest' };
@@ -56,8 +58,9 @@ describe('actual transit response contracts', () => {
   it('decodes polyline and KML LineString without point placemarks', () => {
     expect(decodePolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@')).toEqual([{lat:38.5,lon:-120.2},{lat:40.7,lon:-120.95},{lat:43.252,lon:-126.453}]);
     expect(() => decodePolyline('~')).toThrow();
+    expect(parseKmlSegments(routeKml)).toHaveLength(13);
     expect(parseKml(routeKml)).toHaveLength(78);
-    expect(parseKml('<kml><Point><coordinates>0,0</coordinates></Point><LineString><coordinates>-83,33,0 -84,34,0</coordinates></LineString></kml>')).toEqual([{lat:33,lon:-83},{lat:34,lon:-84}]);
+    expect(parseKml('<kml><Point><coordinates>1,2</coordinates></Point><LineString><coordinates>-83,33,0 -84,34,0</coordinates></LineString></kml>')).toEqual([{lat:33,lon:-83},{lat:34,lon:-84}]);
     expect(() => kmlEndpoint(fixture.infoConfig, '../secret')).toThrow();
   });
   it('normalizes single locate responses and filters broken agencies', () => {
@@ -121,13 +124,24 @@ describe('complete API workflows', () => {
       [discoveryEndpoints.all]:[authority],[discoveryEndpoints.locate({lat:40,lon:-77})]:authority,[discoveryEndpoints.code('CATA')]:[authority],
       [e.config]:fixture.infoConfig,[e.routes]:[fixture.infoDetail],[e.visibleRoutes]:[fixture.infoDetail],[e.route('51')]:fixture.infoDetail,[e.allDetails]:[fixture.infoDetail],[e.directions('51')]:fixture.infoDirections,
       [e.directionStops('51','EB')]:fixture.infoDirectionStops,[e.directionStops('51','WB')]:fixture.infoDetail.Stops,[e.stops]:fixture.infoDetail.Stops,[e.routeStops(['51'])]:fixture.infoDetail.Stops,[e.stop('1')]:stop,[e.departures('1')]:fixture.infoDepartures,[e.messages]:fixture.infoMessages,
-      [kmlEndpoint(fixture.infoConfig,'Route51.kml')]:'<kml><LineString><coordinates>-77.87,40.79 -77.85,40.81</coordinates></LineString></kml>',
+      [kmlEndpoint(fixture.infoConfig,'Route51.kml')]:routeKml,
     };
     fixture.infoDetail.Stops.forEach(s => {responses[e.departures(String(s.StopId))]=[];});
     const {client}=mockClient(responses);
     expect(await discoverAgencies(client)).toHaveLength(1); expect(await locateAgencies({lat:40,lon:-77},client)).toHaveLength(1); expect(await findAgenciesByCode('CATA',client)).toHaveLength(1);
-    const service=new TransitService(agency,client); await service.listRoutes(); const detail=await service.getRoute('51'); const single=await service.getStop('1'); const network=await service.getNetwork();
-    expect(detail.patterns).toHaveLength(2); expect(detail.patterns[0].shape).toHaveLength(2); expect(single.stop.id).toBe('1'); expect(network.patterns).toHaveLength(2); expect(network.messages).toEqual(['Service notice']);
+    const service=new TransitService(agency,client); await service.listRoutes(); const single=await service.getStop('1'); const network=await service.getNetwork();
+    expect(single.stop.id).toBe('1'); expect(network.patterns).toHaveLength(2); expect(network.messages).toEqual(['Service notice']);
+    expect(client.calls.some(c=>c.url.endsWith('Route51.kml'))).toBe(false);
+    const pattern = network.patterns[0], stops = pattern.stops.slice(2, 4);
+    const ride: RideLeg = { kind:'ride', routeId:'51', routeName:'Red Link', direction:pattern.direction, patternId:pattern.id, boardingIndex:2,
+      stops, from:stops[0], to:stops[1], startTime:0, endTime:60_000, source:'estimated' };
+    const getRoute = vi.fn(id => service.getRoute(id, false));
+    const paths = await journeyRideGeometries([ride, { ...ride }], network, getRoute);
+    expect(getRoute).toHaveBeenCalledExactlyOnceWith('51');
+    expect(paths.size).toBe(2);
+    expect(paths.get(ride)!.flat().length).toBeGreaterThan(2);
+    const detail=await service.getRoute('51');
+    expect(detail.patterns).toHaveLength(2); expect(detail.patterns[0].shapeSegments).toHaveLength(13);
     Object.keys(responses).forEach(url=>expect(client.calls.some(c=>c.url===url),url).toBe(true));
   });
 });

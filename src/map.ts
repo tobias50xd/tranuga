@@ -1,10 +1,10 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Coordinate, Network, RouteDetail, Stop, Vehicle } from './types';
-import type { Journey } from './planner';
+import type { Coordinate, Route, RouteDetail, Stop, Vehicle } from './types';
+import type { Journey, RideLeg } from './planner';
 import { escapeHtml as e, safeColor, vehicleAge, headingLabel } from './ui';
 import { routeViewportBounds } from './route-viewport';
-import { rideGeometry, journeyTransfers } from './journey-map';
+import { journeyTransfers } from './journey-map';
 import { VehicleMotion } from './vehicle-motion';
 import { uniqueVehicles, vehicleIsStale } from './vehicle-selection';
 import { getCurrentLocation } from './location';
@@ -217,10 +217,8 @@ export class TransitMap {
     if (this.frame!==undefined) cancelAnimationFrame(this.frame); this.frame=undefined;
     this.busMarkers.clear(); this.vehicles.clearLayers();
   }
-  showJourneyVehicles(journey: Journey, network: Network) {
-    const ids=new Set(journey.legs.filter(leg=>leg.kind==='ride').map(leg=>leg.routeId));
-    const routes=new Map(network.routes.map(route=>[route.id,route]));
-    this.syncVehicles(uniqueVehicles(network.vehicles).filter(bus=>ids.has(bus.routeId)),bus=>routes.get(bus.routeId)?.color||'#b92535',bus=>routes.get(bus.routeId)?.name);
+  showJourneyVehicles(vehicles: Vehicle[], routes: ReadonlyMap<string, Route>) {
+    this.syncVehicles(vehicles, bus => routes.get(bus.routeId)?.color || '#b92535', bus => routes.get(bus.routeId)?.name);
   }
 
   showPoints(origin?: Coordinate, destination?: Coordinate) {
@@ -230,19 +228,17 @@ export class TransitMap {
     }
   }
 
-  showJourney(journey: Journey, network: Network) {
+  showJourney(journey: Journey, routes: ReadonlyMap<string, Route>, geometry: ReadonlyMap<RideLeg, Coordinate[][]>) {
     this.journey.clearLayers(); this.routes.clearLayers(); this.stops.clearLayers();
-    const routeById=new Map(network.routes.map(route=>[route.id,route]));
     for (const leg of journey.legs) {
       if (leg.kind==='wait') continue;
       if (leg.kind==='walk') {
         L.polyline([[leg.from.lat,leg.from.lon],[leg.to.lat,leg.to.lon]],{color:'#718477',weight:3,dashArray:'5,7',className:'journey-walk'}).addTo(this.journey);
         continue;
       }
-      const color=safeColor(routeById.get(leg.routeId)?.color||'#b92535');
-      const geometry=rideGeometry(leg,network);
-      for (const segment of geometry.segments) {
-        const line=L.polyline(segment.map(point=>[point.lat,point.lon]),{color,weight:6,opacity:.9,dashArray:geometry.approximate?'7,8':undefined,className:'journey-ride'}).bindTooltip(e(leg.routeName)).addTo(this.routes);
+      const color=safeColor(routes.get(leg.routeId)?.color||'#b92535');
+      for (const segment of geometry.get(leg) ?? []) {
+        const line=L.polyline(segment.map(point=>[point.lat,point.lon]),{color,weight:6,opacity:.9,className:'journey-ride'}).bindTooltip(e(leg.routeName)).addTo(this.routes);
         line.getElement()?.setAttribute('data-route-id',leg.routeId);
       }
       for (const stop of [leg.stops[0],leg.stops.at(-1)]) if (stop) L.circleMarker([stop.lat,stop.lon],{radius:5,color,weight:3,fillColor:'#fff',fillOpacity:1}).bindTooltip(e(stop.name)).addTo(this.stops);
@@ -254,7 +250,6 @@ export class TransitMap {
         title:`Transfer ${transfer.index}: ${stop.name} · ${transfer.fromRoute} → ${transfer.toRoute}`,zIndexOffset:1000,
       }).bindTooltip(e(`Transfer ${transfer.index} · ${stop.name} · ${transfer.fromRoute} → ${transfer.toRoute}`)).addTo(this.stops);
     }
-    this.showJourneyVehicles(journey,network);
     // Nearby buses on the used lines must not widen the selected journey's camera.
     const bounds=this.routes.getBounds().extend(this.journey.getBounds()).extend(this.stops.getBounds());
     this.fitRoute(bounds);

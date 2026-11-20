@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { rideGeometry, journeyTransfers } from '../src/journey-map';
-import type { Journey, RideLeg } from '../src/planner';
+import { ugaTopology, ugaTrackingPatterns } from '../src/api/topology';
+import { distanceMeters, type Journey, type RideLeg } from '../src/planner';
 import type { Network, RoutePattern, Stop } from '../src/types';
+import fixture from './fixtures/api-contracts.json';
 const stop=(id:string,lon:number,lat=33.95):Stop=>({id,name:id,lat,lon});
 const [a,b,c,d]=[stop('a',-83.393),stop('b',-83.392),stop('c',-83.391),stop('d',-83.390)];
 const ride=(stops:Stop[],extra:Partial<RideLeg>={}):RideLeg=>({kind:'ride',routeId:'1',routeName:'One',direction:'0',from:{...stops[0],name:stops[0].name},to:{...stops.at(-1)!,name:stops.at(-1)!.name},startTime:0,endTime:1000,stops,source:'estimated',...extra});
@@ -36,10 +38,28 @@ describe('journey segment geometry',()=>{
   const result=rideGeometry(ride([a,b,c,d],{patternId:'p',boardingIndex:0}),data);
   expect(result.segments).toHaveLength(2);expect(result.approximate).toBe(false);
  });
- it('uses only ridden stop connectors when a trace is missing, reversed or unrelated',()=>{
-  for(const shape of [[],[d,c,b,a],[{lat:40,lon:-70},{lat:41,lon:-71}]]) {
+ it('uses only ridden stop connectors when a trace is missing or unrelated',()=>{
+  for(const shape of [[],[{lat:40,lon:-70},{lat:41,lon:-71}]]) {
    expect(rideGeometry(ride([b,c],{patternId:'p',boardingIndex:1}),network([pattern({shape})]))).toEqual({segments:[[b,c]],approximate:true});
   }
+ });
+ it('orients a shared trace using the direction of the ridden stops', () => {
+  const reversed = pattern({ shape: [...pattern().shape].reverse() });
+  const result = rideGeometry(ride([b,c], { patternId:'p', boardingIndex:1 }), network([reversed]));
+  expect(result.approximate).toBe(false);
+  expect(result.segments[0]).toEqual([{ lat:b.lat, lon:b.lon }, { lat:33.9502, lon:-83.3915 }, { lat:c.lat, lon:c.lon }]);
+ });
+ it('follows the captured campus trace through stops close to both the outbound and return paths', () => {
+  const [centralEast] = ugaTrackingPatterns(fixture.ugaTracking, '5750', ugaTopology(fixture.ugaStatic));
+  const traveled = centralEast.stops.slice(1, 9);
+  const result = rideGeometry(ride(traveled, { routeId:'5750', patternId:centralEast.id, boardingIndex:1 }), network([centralEast]));
+  const points = result.segments.flat();
+  expect(result.approximate).toBe(false);
+  expect(points.length).toBeGreaterThan(50);
+  expect(distanceMeters(points[0], traveled[0])).toBeLessThan(15);
+  expect(distanceMeters(points.at(-1)!, traveled.at(-1)!)).toBeLessThan(15);
+  expect(points.some(point => distanceMeters(point, traveled[3]) < 15)).toBe(true);
+  expect(points.some(point => distanceMeters(point, centralEast.stops[9]) < 50)).toBe(false);
  });
  it('rejects an incorrect repeated-stop visit and keeps transfer walk endpoints distinct',()=>{
   expect(rideGeometry(ride([b,c],{patternId:'p',boardingIndex:0}),network([pattern()])).approximate).toBe(true);

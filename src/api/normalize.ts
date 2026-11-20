@@ -90,12 +90,15 @@ export function decodePolyline(encoded: string): Coordinate[] {
   return result;
 }
 /** Only LineString coordinates form route geometry; point placemarks are excluded. */
-export function parseKml(kml: string): Coordinate[] {
-  const points: Coordinate[] = [];
+export function parseKmlSegments(kml: string): Coordinate[][] {
+  const segments: Coordinate[][] = [];
   for (const line of kml.matchAll(/<(?:\w+:)?LineString\b[^>]*>([\s\S]*?)<\/(?:\w+:)?LineString>/gi)) {
     const coords = /<(?:\w+:)?coordinates\b[^>]*>([\s\S]*?)<\/(?:\w+:)?coordinates>/i.exec(line[1]);
     if (!coords) continue;
+    const points: Coordinate[] = [];
     for (const tuple of coords[1].trim().split(/\s+/)) { const [lon, lat] = tuple.split(',').map(Number); const point = coordinate({ lat, lon }); if (point) points.push(point); }
+    if (points.length) segments.push(points);
   }
-  return points;
+  return segments;
 }
+export function parseKml(kml: string): Coordinate[] { return parseKmlSegments(kml).flat(); }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RouteVehicleTracker } from '../src/replication/route-vehicles';
+import { RouteVehicleTracker, uniqueFleetVehicles } from '../src/replication/route-vehicles';
 import type { Vehicle } from '../src/types';
 import { vehicleIsStale } from '../src/vehicle-selection';
 
@@ -9,6 +9,13 @@ const bus = (changes: Partial<Vehicle> = {}): Vehicle => ({
 });
 
 describe('route vehicle feed selection', () => {
+  it('renders a reassigned fleet vehicle once across two selected routes', () => {
+    const previous = bus({ id:'portal:12', fleetIdentity:'fleet:12', agreement:'stale-backup' });
+    const current = bus({ id:'info:12', fleetIdentity:'fleet:12', routeId:'2', updatedAt:time - 5_000 });
+    const independent = bus({ id:'other:12', fleetIdentity:'other-fleet:12' });
+    expect(uniqueFleetVehicles([previous, current, independent], time)).toEqual([current, independent]);
+  });
+
   it('switches the entire fleet to a better feed after probing, without mixing old and new positions', async () => {
     let now = time;
     const portal = vi.fn(async () => [bus(), bus({ id: 'portal-only' })]);
